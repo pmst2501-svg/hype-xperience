@@ -1,0 +1,430 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Wifi,
+  Battery,
+  Sparkles,
+  Play,
+  Volume2,
+  ChevronDown,
+  Smartphone,
+  Maximize2,
+  Minimize2,
+  Radio,
+  CheckCircle2,
+  Music,
+  Zap,
+} from 'lucide-react';
+
+export type IPhoneColor = 'natural' | 'black' | 'white' | 'desert';
+export type IPhoneViewMode = 'frame' | 'compact' | 'full';
+
+interface IPhoneShellProps {
+  children: React.ReactNode;
+  activeEventTitle?: string;
+  dynamicIslandNotification?: {
+    title: string;
+    subtitle: string;
+    icon?: string;
+    type?: 'wristband' | 'ticket' | 'music' | 'info';
+  } | null;
+  onClearNotification?: () => void;
+  onOpenStoryVideo?: () => void;
+  onOpenWristbandTest?: () => void;
+}
+
+export const IPhoneShell: React.FC<IPhoneShellProps> = ({
+  children,
+  activeEventTitle = 'Bush Brothers Fest 2026',
+  dynamicIslandNotification,
+  onClearNotification,
+  onOpenStoryVideo,
+  onOpenWristbandTest,
+}) => {
+  const [viewMode, setViewMode] = useState<IPhoneViewMode>(() => {
+    return (localStorage.getItem('hype_ticket_iphone_view_mode') as IPhoneViewMode) || 'frame';
+  });
+
+  const [chassisColor, setChassisColor] = useState<IPhoneColor>(() => {
+    return (localStorage.getItem('hype_ticket_iphone_color') as IPhoneColor) || 'natural';
+  });
+
+  const [currentTime, setCurrentTime] = useState<string>('9:41');
+  const [isDynamicIslandExpanded, setIsDynamicIslandExpanded] = useState<boolean>(false);
+  const [batteryLevel] = useState<number>(88);
+
+  // Update clock every minute
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      const hours = now.getHours();
+      const minutes = now.getMinutes().toString().padStart(2, '0');
+      setCurrentTime(`${hours}:${minutes}`);
+    };
+    updateTime();
+    const timer = setInterval(updateTime, 30000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Auto-expand Dynamic Island on new notification
+  useEffect(() => {
+    if (dynamicIslandNotification) {
+      setIsDynamicIslandExpanded(true);
+      const timer = setTimeout(() => {
+        setIsDynamicIslandExpanded(false);
+        if (onClearNotification) onClearNotification();
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [dynamicIslandNotification, onClearNotification]);
+
+  const handleSetViewMode = (mode: IPhoneViewMode) => {
+    setViewMode(mode);
+    localStorage.setItem('hype_ticket_iphone_view_mode', mode);
+  };
+
+  const handleSetColor = (color: IPhoneColor) => {
+    setChassisColor(color);
+    localStorage.setItem('hype_ticket_iphone_color', color);
+  };
+
+  // Color styles for iPhone 16 Pro Titanium bezel
+  const chassisConfig = {
+    natural: {
+      name: 'Titanio Natural',
+      outerBorder: 'border-[#5b5853]',
+      innerBorder: 'border-[#383633]',
+      outerBg: 'bg-[#2a2927]',
+      accentBg: 'from-[#65625c] via-[#3d3b37] to-[#252422]',
+      buttonBg: 'bg-[#4e4b46]',
+      glow: 'shadow-[0_20px_80px_rgba(100,95,85,0.35)]',
+    },
+    black: {
+      name: 'Titanio Negro',
+      outerBorder: 'border-[#333336]',
+      innerBorder: 'border-[#1e1e20]',
+      outerBg: 'bg-[#151517]',
+      accentBg: 'from-[#38383c] via-[#222225] to-[#121214]',
+      buttonBg: 'bg-[#2c2c2f]',
+      glow: 'shadow-[0_20px_80px_rgba(0,0,0,0.7)]',
+    },
+    white: {
+      name: 'Titanio Blanco',
+      outerBorder: 'border-[#c2c2c8]',
+      innerBorder: 'border-[#94949c]',
+      outerBg: 'bg-[#d6d6dc]',
+      accentBg: 'from-[#f0f0f5] via-[#ceced4] to-[#a8a8b0]',
+      buttonBg: 'bg-[#b8b8c0]',
+      glow: 'shadow-[0_20px_80px_rgba(200,200,215,0.35)]',
+    },
+    desert: {
+      name: 'Titanio Desierto',
+      outerBorder: 'border-[#7a6452]',
+      innerBorder: 'border-[#4e3f34]',
+      outerBg: 'bg-[#3b3028]',
+      accentBg: 'from-[#8e7561] via-[#564539] to-[#30261f]',
+      buttonBg: 'bg-[#675445]',
+      glow: 'shadow-[0_20px_80px_rgba(140,105,80,0.35)]',
+    },
+  }[chassisColor];
+
+  return (
+    <div className="min-h-screen flex flex-col bg-[#06070a] text-white">
+      {/* Top Bar: iPhone Controller Switcher (Fixed or sticky for convenience) */}
+      <div className="sticky top-0 z-50 bg-[#0d0e14]/90 backdrop-blur-xl border-b border-white/10 px-3 py-2 flex items-center justify-between text-xs">
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-neutral-800 to-neutral-600 flex items-center justify-center font-bold text-white text-xs border border-white/20 shadow">
+            
+          </div>
+          <span className="font-semibold text-white tracking-wide flex items-center gap-1.5">
+            <span>iPhone 16 Pro Replica</span>
+            <span className="hidden sm:inline-block px-1.5 py-0.5 rounded text-[10px] bg-white/10 text-neutral-300 font-mono">
+              iOS 18
+            </span>
+          </span>
+        </div>
+
+        {/* View Mode & Finish controls */}
+        <div className="flex items-center gap-2">
+          {/* Chassis finish picker (visible only in frame mode) */}
+          {viewMode === 'frame' && (
+            <div className="hidden md:flex items-center gap-1 bg-white/5 rounded-full p-1 border border-white/10">
+              {(['natural', 'black', 'white', 'desert'] as IPhoneColor[]).map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => handleSetColor(c)}
+                  className={`w-4 h-4 rounded-full transition-transform cursor-pointer ${
+                    c === 'natural'
+                      ? 'bg-[#6b6761]'
+                      : c === 'black'
+                      ? 'bg-[#222225]'
+                      : c === 'white'
+                      ? 'bg-[#e4e4ea]'
+                      : 'bg-[#856b56]'
+                  } ${chassisColor === c ? 'scale-125 ring-2 ring-white' : 'opacity-70 hover:opacity-100'}`}
+                  title={
+                    c === 'natural'
+                      ? 'Titanio Natural'
+                      : c === 'black'
+                      ? 'Titanio Negro'
+                      : c === 'white'
+                      ? 'Titanio Blanco'
+                      : 'Titanio Desierto'
+                  }
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Mode segmented control */}
+          <div className="flex items-center gap-0.5 bg-black/40 rounded-lg p-0.5 border border-white/10">
+            <button
+              type="button"
+              onClick={() => handleSetViewMode('frame')}
+              className={`px-2 py-1 rounded text-[11px] font-medium flex items-center gap-1 transition cursor-pointer ${
+                viewMode === 'frame'
+                  ? 'bg-white text-black font-bold shadow'
+                  : 'text-neutral-400 hover:text-white'
+              }`}
+              title="Marco completo iPhone 16 Pro con botones físicos"
+            >
+              <Smartphone className="w-3 h-3" />
+              <span className="hidden sm:inline">Marco iPhone</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSetViewMode('compact')}
+              className={`px-2 py-1 rounded text-[11px] font-medium flex items-center gap-1 transition cursor-pointer ${
+                viewMode === 'compact'
+                  ? 'bg-white text-black font-bold shadow'
+                  : 'text-neutral-400 hover:text-white'
+              }`}
+              title="Formato móvil adaptable vertical"
+            >
+              <Minimize2 className="w-3 h-3" />
+              <span className="hidden sm:inline">Móvil Fluido</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSetViewMode('full')}
+              className={`px-2 py-1 rounded text-[11px] font-medium flex items-center gap-1 transition cursor-pointer ${
+                viewMode === 'full'
+                  ? 'bg-white text-black font-bold shadow'
+                  : 'text-neutral-400 hover:text-white'
+              }`}
+              title="Pantalla completa expandida con status bar iOS"
+            >
+              <Maximize2 className="w-3 h-3" />
+              <span className="hidden sm:inline">Expandido</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Container */}
+      <div
+        className={`flex-1 flex items-center justify-center p-0 ${
+          viewMode === 'frame'
+            ? 'py-4 sm:py-8 px-2 sm:px-4 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-neutral-900 via-[#07080c] to-[#040406]'
+            : viewMode === 'compact'
+            ? 'py-2 sm:py-6 px-1 sm:px-4'
+            : 'w-full'
+        }`}
+      >
+        {/* Real iPhone 16 Pro Chassis Wrapper */}
+        <div
+          className={`relative transition-all duration-300 ${
+            viewMode === 'frame'
+              ? `w-full max-w-[430px] rounded-[56px] p-[10px] bg-gradient-to-b ${chassisConfig.accentBg} ${chassisConfig.glow} border-[3px] ${chassisConfig.outerBorder}`
+              : viewMode === 'compact'
+              ? 'w-full max-w-[440px] rounded-[44px] border border-white/15 overflow-hidden shadow-2xl'
+              : 'w-full max-w-full'
+          }`}
+        >
+          {/* Hardware Physical Buttons (Only rendered in 'frame' mode) */}
+          {viewMode === 'frame' && (
+            <>
+              {/* Left Side: Action Button */}
+              <div
+                onClick={onOpenWristbandTest}
+                title="Botón de Acción: Prueba Rápida Brazalete"
+                className={`absolute -left-[5px] top-[115px] w-[5px] h-[28px] ${chassisConfig.buttonBg} rounded-l-md cursor-pointer hover:w-[6px] transition-all`}
+              />
+              {/* Left Side: Volume Up */}
+              <div
+                className={`absolute -left-[5px] top-[160px] w-[5px] h-[50px] ${chassisConfig.buttonBg} rounded-l-md`}
+              />
+              {/* Left Side: Volume Down */}
+              <div
+                className={`absolute -left-[5px] top-[222px] w-[5px] h-[50px] ${chassisConfig.buttonBg} rounded-l-md`}
+              />
+              {/* Right Side: Power / Lock Button */}
+              <div
+                onClick={() => setIsDynamicIslandExpanded(!isDynamicIslandExpanded)}
+                title="Botón Lateral: Activar Dynamic Island"
+                className={`absolute -right-[5px] top-[180px] w-[5px] h-[75px] ${chassisConfig.buttonBg} rounded-r-md cursor-pointer hover:w-[6px] transition-all`}
+              />
+
+              {/* Antenna bands */}
+              <div className="absolute top-[80px] -left-[2px] w-[2px] h-[6px] bg-black/60" />
+              <div className="absolute top-[80px] -right-[2px] w-[2px] h-[6px] bg-black/60" />
+              <div className="absolute bottom-[80px] -left-[2px] w-[2px] h-[6px] bg-black/60" />
+              <div className="absolute bottom-[80px] -right-[2px] w-[2px] h-[6px] bg-black/60" />
+            </>
+          )}
+
+          {/* iPhone Screen Container (Bezel inner border) */}
+          <div
+            className={`relative w-full overflow-hidden bg-[#050508] text-white flex flex-col ${
+              viewMode === 'frame'
+                ? 'rounded-[46px] border-[3px] border-black shadow-inner min-h-[880px] max-h-[920px]'
+                : viewMode === 'compact'
+                ? 'rounded-[40px] min-h-[850px]'
+                : 'min-h-screen'
+            }`}
+          >
+            {/* iOS Status Bar (Always present to give genuine iPhone vibe) */}
+            <div className="sticky top-0 z-40 bg-black/90 backdrop-blur-md px-5 pt-3 pb-2 flex items-center justify-between select-none relative">
+              {/* Time */}
+              <div
+                className={`w-14 text-left transition-opacity duration-200 ${
+                  isDynamicIslandExpanded ? 'opacity-0 pointer-events-none' : 'opacity-100'
+                }`}
+              >
+                <span className="text-[13px] font-bold tracking-tight text-white font-mono">
+                  {currentTime}
+                </span>
+              </div>
+
+              {/* Dynamic Island Container */}
+              <div className="flex-1 flex justify-center">
+                <div
+                  onClick={() => setIsDynamicIslandExpanded(!isDynamicIslandExpanded)}
+                  className={`bg-black text-white rounded-full transition-all duration-300 cursor-pointer shadow-2xl border border-neutral-800 flex items-center justify-between overflow-hidden z-50 ${
+                    isDynamicIslandExpanded
+                      ? 'w-[94%] max-w-[360px] h-[82px] rounded-[32px] p-3 -mt-1'
+                      : 'w-[126px] h-[30px] px-2.5'
+                  }`}
+                  title="Toca para interactuar con la Dynamic Island"
+                >
+                  {!isDynamicIslandExpanded ? (
+                    /* Compact Pill View */
+                    <>
+                      {/* Left side: Sensor/Activity */}
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        <span className="text-[10px] font-medium tracking-tight text-neutral-300 max-w-[50px] truncate">
+                          Live
+                        </span>
+                      </div>
+
+                      {/* True iPhone Camera / FaceID lens */}
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-2.5 h-2.5 rounded-full bg-[#111116] border border-[#22222a] flex items-center justify-center">
+                          <div className="w-1 h-1 rounded-full bg-[#1e2338]" />
+                        </div>
+                        {/* Audio waveform */}
+                        <div className="flex items-center gap-0.5 h-2.5">
+                          <span className="w-0.5 h-1.5 bg-emerald-400 rounded-full animate-bounce" />
+                          <span className="w-0.5 h-2.5 bg-emerald-400 rounded-full animate-bounce [animation-delay:0.15s]" />
+                          <span className="w-0.5 h-2 bg-emerald-400 rounded-full animate-bounce [animation-delay:0.3s]" />
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    /* Expanded Live Activity Card */
+                    <div className="w-full flex items-center justify-between gap-3 animate-fadeIn">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 to-emerald-500 flex items-center justify-center shadow-md flex-shrink-0">
+                          <Music className="w-5 h-5 text-black" />
+                        </div>
+                        <div className="text-left min-w-0">
+                          <div className="text-xs font-bold text-white flex items-center gap-1 truncate">
+                            <span className="truncate">{activeEventTitle}</span>
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
+                          </div>
+                          <div className="text-[10px] text-neutral-400 flex items-center gap-1.5 truncate">
+                            <span className="truncate">Bush Brothers • En Vivo</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Quick action buttons in Dynamic Island */}
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        {onOpenStoryVideo && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenStoryVideo();
+                            }}
+                            className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition cursor-pointer"
+                            title="Ver Video 9:16"
+                          >
+                            <Play className="w-3.5 h-3.5 fill-current" />
+                          </button>
+                        )}
+                        {onOpenWristbandTest && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenWristbandTest();
+                            }}
+                            className="p-1.5 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 transition cursor-pointer"
+                            title="Probar Brazalete"
+                          >
+                            <Zap className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Status Icons: 5G, Wi-Fi, Battery */}
+              <div
+                className={`w-14 flex items-center justify-end gap-1.5 text-neutral-200 transition-opacity duration-200 ${
+                  isDynamicIslandExpanded ? 'opacity-0 pointer-events-none' : 'opacity-100'
+                }`}
+              >
+                <span className="text-[10px] font-bold font-mono">5G</span>
+                <Wifi className="w-3.5 h-3.5" />
+                <div className="flex items-center gap-0.5">
+                  <div className="relative w-5 h-2.5 rounded-[4px] border border-neutral-300 p-0.5 flex items-center">
+                    <div
+                      className="h-full bg-white rounded-[2px]"
+                      style={{ width: `${batteryLevel}%` }}
+                    />
+                  </div>
+                  <div className="w-0.5 h-1 bg-neutral-300 rounded-r-sm" />
+                </div>
+              </div>
+            </div>
+
+            {/* Scrollable Screen Content (The actual web app viewport) */}
+            <div
+              className={`flex-1 overflow-y-auto overflow-x-hidden ${
+                viewMode === 'frame' ? 'pb-8' : 'pb-6'
+              }`}
+            >
+              {children}
+            </div>
+
+            {/* iOS Bottom Safe Area & Home Indicator Bar */}
+            <div className="sticky bottom-0 z-40 bg-black/60 backdrop-blur-md pt-2 pb-2.5 flex items-center justify-center pointer-events-auto">
+              <div
+                onClick={() => {
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className="w-36 h-1.5 bg-white/50 hover:bg-white/80 active:scale-95 transition-all rounded-full cursor-pointer shadow"
+                title="Desliza o toca para volver arriba (Home Indicator iOS)"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};

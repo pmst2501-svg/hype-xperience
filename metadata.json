@@ -1,0 +1,11 @@
+{
+  "name": "Hype Ticket · Boletera & Control de Acceso",
+  "description": "Plataforma de boletaje para eventos con validación fotográfica de brazaletes, generación de QR antifraude, geolocalización, roles de colaborador y hero en formato 9:16.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

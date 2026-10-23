@@ -1,0 +1,100 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile with authentication and contact information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth user identifier" },
+        "displayName": { "type": "string", "description": "Full name or alias" },
+        "email": { "type": "string", "format": "email", "description": "User email address" },
+        "phoneNumber": { "type": "string", "description": "Phone number with country code" },
+        "photoURL": { "type": "string", "description": "Profile picture URL or avatar" },
+        "role": { "type": "string", "enum": ["admin", "collab", "user"], "description": "Role in Hype Ticket platform" },
+        "bio": { "type": "string", "description": "Brief biography or organization details" },
+        "company": { "type": "string", "description": "Producer or organizer company name" },
+        "createdAt": { "type": "string", "description": "Account registration timestamp" }
+      },
+      "required": ["uid", "role"]
+    },
+    "EventItem": {
+      "title": "EventItem",
+      "description": "Public and private event records",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique event ID" },
+        "title": { "type": "string", "description": "Name of the event" },
+        "code": { "type": "string", "description": "Short code e.g. NYE-2026" },
+        "category": { "type": "string", "description": "Event category" },
+        "date": { "type": "string", "description": "Event calendar date" },
+        "time": { "type": "string", "description": "Event start time" },
+        "venue": { "type": "string", "description": "Venue name" },
+        "heroImage": { "type": "string", "description": "9:16 vertical cover or landscape banner" },
+        "videoStoryUrl": { "type": "string", "description": "9:16 vertical video story URL" },
+        "capacity": { "type": "number", "description": "Total attendee capacity" },
+        "soldCount": { "type": "number", "description": "Total tickets issued" },
+        "basePrice": { "type": "number", "description": "Base admission ticket price" },
+        "status": { "type": "string", "enum": ["active", "soldout", "draft", "past"], "description": "Status" }
+      },
+      "required": ["id", "title", "date", "venue"]
+    },
+    "Ticket": {
+      "title": "Ticket",
+      "description": "Event admission ticket",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique ticket ID" },
+        "eventId": { "type": "string", "description": "Related event ID" },
+        "folio": { "type": "string", "description": "Ticket folio code" },
+        "attendeeName": { "type": "string", "description": "Attendee full name" },
+        "attendeeEmail": { "type": "string", "format": "email", "description": "Attendee email" },
+        "attendeePhone": { "type": "string", "description": "Attendee phone number" },
+        "tier": { "type": "string", "enum": ["general", "vip", "backstage"], "description": "Ticket tier" },
+        "price": { "type": "number", "description": "Price paid" },
+        "status": { "type": "string", "enum": ["valid", "used", "cancelled"], "description": "Current status" },
+        "qrPayload": { "type": "string", "description": "QR code verification payload" },
+        "purchaseDate": { "type": "string", "description": "Purchase timestamp" },
+        "usedAt": { "type": "string", "description": "Timestamp when checked in" },
+        "wristbandFolio": { "type": "string", "description": "Linked wristband folio" }
+      },
+      "required": ["id", "eventId", "folio", "attendeeName", "tier", "status"]
+    },
+    "WristbandVerification": {
+      "title": "WristbandVerification",
+      "description": "Physical wristband photo capture and tamper-evident audit record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Verification audit ID" },
+        "eventId": { "type": "string", "description": "Associated event ID" },
+        "folio": { "type": "string", "description": "Wristband folio" },
+        "guestName": { "type": "string", "description": "Linked guest name" },
+        "photoUrl": { "type": "string", "description": "Captured wristband photo" },
+        "photoHash": { "type": "string", "description": "Cryptographic visual fingerprint of the photo" },
+        "timestamp": { "type": "string", "description": "ISO timestamp of capture" },
+        "formattedDateTime": { "type": "string", "description": "Human readable capture date time" },
+        "qrData": { "type": "string", "description": "QR code content" },
+        "status": { "type": "string", "enum": ["approved", "duplicate_flagged", "invalid"], "description": "Anti-fraud status" },
+        "accessGate": { "type": "string", "description": "Assigned gate" }
+      },
+      "required": ["id", "eventId", "folio", "photoHash", "timestamp", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profiles for authenticated attendees, staff, and producers"
+    },
+    "/events/{eventId}": {
+      "schema": "EventItem",
+      "description": "Event catalog and configuration"
+    },
+    "/events/{eventId}/tickets/{ticketId}": {
+      "schema": "Ticket",
+      "description": "Issued tickets for an event"
+    },
+    "/events/{eventId}/wristbands/{wristbandId}": {
+      "schema": "WristbandVerification",
+      "description": "Wristband photo verification audits and anti-fraud scans"
+    }
+  }
+}
