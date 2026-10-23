@@ -6,6 +6,7 @@ export type AdminTab =
   | 'tickets'
   | 'qrscans'
   | 'collaborators'
+  | 'stripe'
   | 'tables'
   | 'location'
   | 'calendar';
@@ -14,18 +15,30 @@ export interface UserProfile {
   uid: string;
   displayName: string;
   email: string;
+  passwordHash?: string;
   phoneNumber?: string;
   photoURL: string;
   role: UserRole;
   bio?: string;
   company?: string;
-  provider: 'google' | 'phone' | 'email' | 'demo';
+  organizationId?: string;
+  taxId?: string;
+  city?: string;
+  instagram?: string;
+  website?: string;
+  stripeAccountEmail?: string;
+  assignedGate?: string;
+  staffRoleTitle?: string;
+  pin?: string;
+  documentId?: string;
+  provider: 'google' | 'phone' | 'email';
   isRegistered?: boolean;
   createdAt?: string;
 }
 
 export interface OrganizerProfile {
   id: string;
+  ownerUid?: string;
   name: string;
   tagline: string;
   bio: string;
@@ -34,6 +47,8 @@ export interface OrganizerProfile {
   verified: boolean;
   email: string;
   phone: string;
+  taxId?: string;
+  stripeAccountEmail?: string;
   website: string;
   instagram: string;
   eventsCount: number;
@@ -83,6 +98,7 @@ export interface Ticket {
   guestName: string;
   guestEmail: string;
   guestPhone?: string;
+  guestDocumentId?: string;
   buyerUid?: string;
   tier: TicketTier;
   price: number;
@@ -94,15 +110,22 @@ export interface Ticket {
   checkedInGate?: string;
   qrPayload: string;
   seatInfo?: string;
+  stripePaymentIntentId?: string;
+  stripeOrderId?: string;
+  paymentMethod?: string;
+  paymentStatus?: 'paid' | 'complimentary' | 'refunded';
 }
 
 export interface Collaborator {
   id: string;
+  uid?: string;
   name: string;
   roleTitle: string;
   email: string;
   phone: string;
+  passwordHash?: string;
   pin: string;
+  organizationName?: string;
   status: 'active' | 'inactive';
   checkinsCount: number;
   assignedGate: string;
@@ -121,4 +144,31 @@ export interface VipTable {
   price: number;
   status: 'available' | 'reserved' | 'occupied';
   reservedBy?: string;
+}
+
+export interface StripeOrder {
+  id: string;
+  paymentIntentId: string;
+  chargeId: string;
+  receiptNumber: string;
+  eventId: string;
+  eventTitle: string;
+  eventCode: string;
+  buyerUid: string;
+  buyerName: string;
+  buyerEmail: string;
+  buyerPhone?: string;
+  tier: TicketTier;
+  quantity: number;
+  unitPrice: number;
+  serviceFee: number;
+  totalAmount: number;
+  currency: string;
+  paymentMethodType: 'card' | 'apple_pay' | 'spei';
+  paymentMethodLabel: string;
+  cardBrand?: string;
+  cardLast4?: string;
+  status: 'succeeded' | 'pending' | 'failed';
+  ticketFolios: string[];
+  createdAt: string;
 }

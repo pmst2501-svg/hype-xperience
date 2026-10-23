@@ -1,9 +1,18 @@
-import type { Ticket, Collaborator, VipTable, TicketTier } from '../types/ticket.ts';
+import type {
+  Ticket,
+  Collaborator,
+  VipTable,
+  TicketTier,
+  UserRole,
+  UserProfile,
+  OrganizerProfile,
+  StripeOrder,
+} from '../types/ticket.ts';
 
 /**
  * Normalizes a phone number by stripping all non-digit characters and keeping the last 10 digits
  * so Mexican numbers (+52 744 123 4567 vs 7441234567) match reliably.
- */
+*/
 export function normalizePhone(phone?: string): string {
   if (!phone) return '';
   const digits = phone.replace(/\D/g, '');
@@ -19,6 +28,280 @@ export function normalizePhone(phone?: string): string {
 export function normalizeEmail(email?: string): string {
   if (!email) return '';
   return email.trim().toLowerCase();
+}
+
+/**
+ * Simple deterministic hash for storing password credentials in user/collaborator profiles.
+ */
+export function hashPasswordCredential(rawPassword: string): string {
+  const clean = rawPassword.trim();
+  let hash = 2166136261;
+  for (let i = 0; i < clean.length; i++) {
+    hash ^= clean.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `hp_${(hash >>> 0).toString(16)}_${clean.length}`;
+}
+
+export interface ZeroRegistrationInput {
+  role: UserRole;
+  displayName: string;
+  email: string;
+  password: string;
+  phoneNumber?: string;
+  photoURL?: string;
+  // Producer / Organization specific
+  organizationName?: string;
+  taxId?: string;
+  city?: string;
+  instagram?: string;
+  website?: string;
+  stripeAccountEmail?: string;
+  bio?: string;
+  // Staff specific
+  assignedGate?: string;
+  staffRoleTitle?: string;
+  pin?: string;
+  // Buyer specific
+  documentId?: string;
+}
+
+export interface ZeroRegistrationResult {
+  valid: boolean;
+  error?: string;
+  userProfile?: UserProfile;
+  organizerProfile?: OrganizerProfile;
+  collaboratorProfile?: Collaborator;
+}
+
+/**
+ * Validates and builds complete zero-to-one profiles for Producer ('admin'), Staff ('collab'), or Buyer ('user').
+ */
+export function buildRegistrationFromZero(
+  input: ZeroRegistrationInput,
+  nowIso = new Date().toISOString()
+): ZeroRegistrationResult {
+  const cleanName = (input.displayName || '').trim();
+  const cleanEmail = normalizeEmail(input.email);
+  const cleanPassword = (input.password || '').trim();
+  const cleanPhone = (input.phoneNumber || '').trim();
+  const cleanOrgName = (input.organizationName || '').trim();
+
+  if (!cleanName || cleanName.length < 2) {
+    return {
+      valid: false,
+      error: 'Ingresa el nombre completo del titular o representante.',
+    };
+  }
+
+  if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+    return {
+      valid: false,
+      error: 'Ingresa un correo electrónico válido.',
+    };
+  }
+
+  if (!cleanPassword || cleanPassword.length < 6) {
+    return {
+      valid: false,
+      error: 'La contraseña debe tener al menos 6 caracteres.',
+    };
+  }
+
+  if (input.role === 'admin' && !cleanOrgName) {
+    return {
+      valid: false,
+      error: 'Para registrar un Creador de Eventos es obligatorio el Nombre de la Organización / Productora.',
+    };
+  }
+
+  const uid = `usr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  const passwordHash = hashPasswordCredential(cleanPassword);
+  const resolvedAvatar =
+    (input.photoURL || '').trim() ||
+    `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanOrgName || cleanName)}`;
+
+  const orgId =
+    input.role === 'admin'
+      ? `org-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`
+      : undefined;
+
+  const userProfile: UserProfile = {
+    uid,
+    displayName: cleanName,
+    email: cleanEmail,
+    passwordHash,
+    phoneNumber: cleanPhone || undefined,
+    photoURL: resolvedAvatar,
+    role: input.role,
+    company:
+      input.role === 'admin'
+        ? cleanOrgName
+        : input.role === 'collab'
+        ? cleanOrgName || 'Staff Operativo Autorizado'
+        : 'Comprador Verificado',
+    organizationId: orgId,
+    taxId: input.taxId?.trim() || undefined,
+    city: input.city?.trim() || 'Acapulco, Guerrero',
+    instagram: input.instagram?.trim() || undefined,
+    website: input.website?.trim() || undefined,
+    stripeAccountEmail: input.stripeAccountEmail?.trim() || cleanEmail,
+    assignedGate:
+      input.role === 'collab'
+        ? input.assignedGate?.trim() || 'Acceso Principal Costera'
+        : undefined,
+    staffRoleTitle:
+      input.role === 'collab'
+        ? input.staffRoleTitle?.trim() || 'Staff Verificación QR · Puerta'
+        : undefined,
+    pin: input.role === 'collab' ? input.pin?.trim() || '1234' : undefined,
+    documentId: input.documentId?.trim() || undefined,
+    bio:
+      input.bio?.trim() ||
+      (input.role === 'admin'
+        ? `Productora Oficial · ${cleanOrgName}`
+        : input.role === 'collab'
+        ? `Staff de Escaneo QR · ${input.assignedGate || 'Acceso Principal'}`
+        : 'Usuario Comprador con Cartera QR Individual'),
+    provider: 'email',
+    isRegistered: true,
+    createdAt: nowIso,
+  };
+
+  let organizerProfile: OrganizerProfile | undefined;
+  if (input.role === 'admin') {
+    organizerProfile = {
+      id: orgId!,
+      ownerUid: uid,
+      name: cleanOrgName,
+      tagline: input.bio?.trim() || `Productora Oficial de Eventos · ${input.city?.trim() || 'Acapulco'}`,
+      bio:
+        input.bio?.trim() ||
+        `Organización registrada en Hype Ticket por ${cleanName}. Venta oficial de entradas con QR individual y pagos vía Stripe.`,
+      avatar: resolvedAvatar,
+      coverImage:
+        'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=80',
+      verified: true,
+      email: cleanEmail,
+      phone: cleanPhone,
+      taxId: input.taxId?.trim() || undefined,
+      stripeAccountEmail: input.stripeAccountEmail?.trim() || cleanEmail,
+      website: input.website?.trim() || '',
+      instagram: input.instagram?.trim() || '',
+      eventsCount: 0,
+    };
+  }
+
+  let collaboratorProfile: Collaborator | undefined;
+  if (input.role === 'collab') {
+    collaboratorProfile = {
+      id: `col-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+      uid,
+      name: cleanName,
+      roleTitle: input.staffRoleTitle?.trim() || 'Staff Verificación QR · Acceso Principal',
+      email: cleanEmail,
+      phone: cleanPhone || 'Sin teléfono',
+      passwordHash,
+      pin: input.pin?.trim() || '1234',
+      organizationName: cleanOrgName || undefined,
+      status: 'active',
+      checkinsCount: 0,
+      assignedGate: input.assignedGate?.trim() || 'Acceso Principal Costera',
+      avatar: resolvedAvatar,
+      lastActive: 'Recién registrado',
+    };
+  }
+
+  return {
+    valid: true,
+    userProfile,
+    organizerProfile,
+    collaboratorProfile,
+  };
+}
+
+/**
+ * Authenticates a user by email and password against registered users and staff records.
+ */
+export function authenticateRegisteredUser(
+  users: UserProfile[],
+  collaborators: Collaborator[],
+  email: string,
+  password: string
+): { success: boolean; error?: string; user?: UserProfile; collaborator?: Collaborator } {
+  const cleanEmail = normalizeEmail(email);
+  const cleanPassword = (password || '').trim();
+
+  if (!cleanEmail || !cleanPassword) {
+    return {
+      success: false,
+      error: 'Ingresa tu correo electrónico y contraseña.',
+    };
+  }
+
+  const expectedHash = hashPasswordCredential(cleanPassword);
+
+  const matchedUser = users.find((u) => normalizeEmail(u.email) === cleanEmail);
+  if (matchedUser) {
+    if (matchedUser.passwordHash && matchedUser.passwordHash !== expectedHash) {
+      return {
+        success: false,
+        error: 'Contraseña incorrecta para esta cuenta.',
+      };
+    }
+    const matchedCollab = findAuthorizedCollaboratorByContact(
+      collaborators,
+      matchedUser.email,
+      matchedUser.phoneNumber
+    );
+    return {
+      success: true,
+      user: { ...matchedUser, isRegistered: true },
+      collaborator: matchedCollab,
+    };
+  }
+
+  // Check if a collaborator was created by the Producer in the Staff panel and is logging in
+  const collabOnly = collaborators.find((c) => normalizeEmail(c.email) === cleanEmail);
+  if (collabOnly) {
+    if (
+      collabOnly.passwordHash &&
+      collabOnly.passwordHash !== expectedHash &&
+      collabOnly.pin !== cleanPassword
+    ) {
+      return {
+        success: false,
+        error: 'Contraseña o PIN operativo incorrecto para la cuenta de trabajador.',
+      };
+    }
+    const derivedUser: UserProfile = {
+      uid: collabOnly.uid || `usr-${collabOnly.id}`,
+      displayName: collabOnly.name,
+      email: collabOnly.email,
+      passwordHash: collabOnly.passwordHash || expectedHash,
+      phoneNumber: collabOnly.phone,
+      photoURL: collabOnly.avatar,
+      role: 'collab',
+      company: collabOnly.organizationName || 'Staff Autorizado',
+      assignedGate: collabOnly.assignedGate,
+      staffRoleTitle: collabOnly.roleTitle,
+      pin: collabOnly.pin,
+      bio: `${collabOnly.roleTitle} · ${collabOnly.assignedGate}`,
+      provider: 'email',
+      isRegistered: true,
+      createdAt: new Date().toISOString(),
+    };
+    return {
+      success: true,
+      user: derivedUser,
+      collaborator: collabOnly,
+    };
+  }
+
+  return {
+    success: false,
+    error: 'No encontramos una cuenta registrada con ese correo. Regístrate primero en la pestaña "Crear Cuenta desde 0".',
+  };
 }
 
 /**
@@ -95,6 +378,253 @@ export function generateTicketQrPayload(params: {
     issuedAt: params.issuedAt,
     sig: `ACA-${checksum}`,
   });
+}
+
+/**
+ * Calculates Stripe checkout breakdown (subtotal, Stripe service fee, total in MXN).
+ */
+export function calculateStripeCheckoutTotals(
+  unitPrice: number,
+  quantity: number,
+  includeServiceFee = true
+): {
+  subtotal: number;
+  serviceFee: number;
+  totalAmount: number;
+} {
+  const cleanQty = Math.max(1, Math.floor(quantity));
+  const cleanUnit = Math.max(0, Number(unitPrice) || 0);
+  const subtotal = Math.round(cleanUnit * cleanQty);
+  // Standard Stripe Mexico processing fee: 3.6% + $3 MXN
+  const serviceFee =
+    includeServiceFee && subtotal > 0 ? Math.round(subtotal * 0.036 + 3) : 0;
+  const totalAmount = subtotal + serviceFee;
+  return { subtotal, serviceFee, totalAmount };
+}
+
+/**
+ * Detects card brand and validates Stripe card details.
+ */
+export function validateStripeCardDetails(params: {
+  cardNumber: string;
+  cardExpiry: string;
+  cardCvc: string;
+  cardholderName: string;
+}): {
+  valid: boolean;
+  error?: string;
+  brand: string;
+  last4: string;
+} {
+  const digits = (params.cardNumber || '').replace(/\D/g, '');
+  const brand = digits.startsWith('4')
+    ? 'Visa'
+    : /^5[1-5]/.test(digits) || /^2[2-7]/.test(digits)
+    ? 'Mastercard'
+    : /^3[47]/.test(digits)
+    ? 'American Express'
+    : 'Tarjeta';
+
+  const last4 = digits.slice(-4) || '4242';
+
+  if (digits.length < 13 || digits.length > 19) {
+    return {
+      valid: false,
+      error: 'Ingresa un número de tarjeta válido (16 dígitos).',
+      brand,
+      last4,
+    };
+  }
+
+  const expMatch = (params.cardExpiry || '').trim().match(/^(\d{2})\s*\/?\s*(\d{2,4})$/);
+  if (!expMatch) {
+    return {
+      valid: false,
+      error: 'Ingresa la fecha de vencimiento en formato MM/AA.',
+      brand,
+      last4,
+    };
+  }
+
+  const month = Number(expMatch[1]);
+  if (month < 1 || month > 12) {
+    return {
+      valid: false,
+      error: 'El mes de vencimiento debe estar entre 01 y 12.',
+      brand,
+      last4,
+    };
+  }
+
+  const cvcDigits = (params.cardCvc || '').replace(/\D/g, '');
+  if (cvcDigits.length < 3 || cvcDigits.length > 4) {
+    return {
+      valid: false,
+      error: 'Ingresa el código de seguridad CVC (3 o 4 dígitos).',
+      brand,
+      last4,
+    };
+  }
+
+  if (!params.cardholderName || params.cardholderName.trim().length < 2) {
+    return {
+      valid: false,
+      error: 'Ingresa el nombre del titular de la tarjeta.',
+      brand,
+      last4,
+    };
+  }
+
+  return {
+    valid: true,
+    brand,
+    last4,
+  };
+}
+
+/**
+ * Creates a StripeOrder and the corresponding individual QR Tickets.
+ */
+export function buildStripeOrderAndTickets(params: {
+  eventId: string;
+  eventTitle: string;
+  eventCode: string;
+  currency?: string;
+  buyerUid: string;
+  guestName: string;
+  guestEmail: string;
+  guestPhone?: string;
+  guestDocumentId?: string;
+  tier: TicketTier;
+  unitPrice: number;
+  quantity: number;
+  paymentMethodType: 'card' | 'apple_pay' | 'spei';
+  cardBrand?: string;
+  cardLast4?: string;
+  paymentIntentId?: string;
+  chargeId?: string;
+  includeServiceFee?: boolean;
+  issuedAt?: string;
+}): {
+  order: StripeOrder;
+  tickets: Ticket[];
+} {
+  const { subtotal, serviceFee, totalAmount } = calculateStripeCheckoutTotals(
+    params.unitPrice,
+    params.quantity,
+    params.includeServiceFee ?? true
+  );
+
+  const nowStr =
+    params.issuedAt ||
+    new Date().toLocaleDateString('es-MX', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+  const orderId = `ord-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  const paymentIntentId =
+    params.paymentIntentId ||
+    `pi_3Q${Math.random().toString(36).slice(2, 10).toUpperCase()}${Date.now().toString().slice(-4)}`;
+  const chargeId =
+    params.chargeId ||
+    `ch_3Q${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
+  const receiptNumber = `STRP-${Math.floor(100000 + Math.random() * 900000)}`;
+
+  const paymentMethodLabel =
+    params.paymentMethodType === 'apple_pay'
+      ? 'Apple Pay · Stripe Express'
+      : params.paymentMethodType === 'spei'
+      ? 'SPEI Transferencia Instantánea · Stripe'
+      : `${params.cardBrand || 'Visa'} •••• ${params.cardLast4 || '4242'}`;
+
+  const seatLabel =
+    params.tier === 'General'
+      ? 'Acceso General Playa & Dancefloor'
+      : params.tier === 'VIP'
+      ? 'Sunbed & Terraza VIP Frente al Mar'
+      : params.tier === 'Backstage'
+      ? 'Deck Cabina DJ & Barra Premium'
+      : 'Cama Balinesa Reservada';
+
+  const tickets: Ticket[] = [];
+  const ticketFolios: string[] = [];
+  const prefix = (params.eventCode || 'OLJ').split('-')[0].slice(0, 4).toUpperCase() || 'OLJ';
+
+  for (let i = 0; i < params.quantity; i++) {
+    const ticketId = `tkt-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 5)}`;
+    const folio = generateTicketFolio(params.tier, prefix);
+    ticketFolios.push(folio);
+
+    const holderName =
+      params.quantity > 1
+        ? `${params.guestName.trim()} (Boleto ${i + 1}/${params.quantity})`
+        : params.guestName.trim();
+
+    const qrPayload = generateTicketQrPayload({
+      ticketId,
+      eventId: params.eventId,
+      eventCode: params.eventCode,
+      folio,
+      guestName: holderName,
+      guestEmail: params.guestEmail.trim(),
+      tier: params.tier,
+      issuedAt: nowStr,
+    });
+
+    tickets.push({
+      id: ticketId,
+      eventId: params.eventId,
+      folio,
+      guestName: holderName,
+      guestEmail: params.guestEmail.trim(),
+      guestPhone: params.guestPhone?.trim() || undefined,
+      guestDocumentId: params.guestDocumentId?.trim() || undefined,
+      buyerUid: params.buyerUid,
+      tier: params.tier,
+      price: params.unitPrice,
+      status: 'valid',
+      issuedAt: nowStr,
+      qrPayload,
+      seatInfo: seatLabel,
+      stripePaymentIntentId: paymentIntentId,
+      stripeOrderId: orderId,
+      paymentMethod: paymentMethodLabel,
+      paymentStatus: 'paid',
+    });
+  }
+
+  const order: StripeOrder = {
+    id: orderId,
+    paymentIntentId,
+    chargeId,
+    receiptNumber,
+    eventId: params.eventId,
+    eventTitle: params.eventTitle,
+    eventCode: params.eventCode,
+    buyerUid: params.buyerUid,
+    buyerName: params.guestName.trim(),
+    buyerEmail: params.guestEmail.trim(),
+    buyerPhone: params.guestPhone?.trim() || undefined,
+    tier: params.tier,
+    quantity: params.quantity,
+    unitPrice: params.unitPrice,
+    serviceFee,
+    totalAmount: totalAmount || subtotal,
+    currency: params.currency || 'MXN',
+    paymentMethodType: params.paymentMethodType,
+    paymentMethodLabel,
+    cardBrand: params.cardBrand,
+    cardLast4: params.cardLast4,
+    status: 'succeeded',
+    ticketFolios,
+    createdAt: new Date().toISOString(),
+  };
+
+  return { order, tickets };
 }
 
 /**
@@ -185,7 +715,7 @@ export function validateAndProcessTicketScan(
     };
   }
 
-  if (activeEventId && matchedTicket.eventId !== activeEventId) {
+  if (activeEventId && activeEventId !== 'evt-template' && matchedTicket.eventId !== activeEventId) {
     return {
       success: false,
       status: 'wrong_event',
@@ -247,8 +777,14 @@ export function calculateTicketingMetrics(
   totalCapacity: number,
   eventId?: string
 ) {
-  const scopedTickets = eventId ? tickets.filter((t) => t.eventId === eventId) : tickets;
-  const scopedTables = eventId ? tables.filter((tb) => tb.eventId === eventId) : tables;
+  const scopedTickets =
+    eventId && eventId !== 'evt-template'
+      ? tickets.filter((t) => t.eventId === eventId)
+      : tickets;
+  const scopedTables =
+    eventId && eventId !== 'evt-template'
+      ? tables.filter((tb) => tb.eventId === eventId)
+      : tables;
 
   const activeTickets = scopedTickets.filter((t) => t.status !== 'cancelled');
   const ticketsSold = activeTickets.length;
@@ -292,7 +828,8 @@ export function filterTickets(
 ): Ticket[] {
   const cleanQuery = query.toLowerCase().trim();
   return tickets.filter((ticket) => {
-    const matchesEvent = !eventId || ticket.eventId === eventId;
+    const matchesEvent =
+      !eventId || eventId === 'evt-template' || ticket.eventId === eventId;
     const matchesStatus = status === 'all' || ticket.status === status;
     const matchesQuery =
       !cleanQuery ||
@@ -301,7 +838,9 @@ export function filterTickets(
       ticket.tier.toLowerCase().includes(cleanQuery) ||
       (ticket.guestEmail && ticket.guestEmail.toLowerCase().includes(cleanQuery)) ||
       (ticket.guestPhone && ticket.guestPhone.toLowerCase().includes(cleanQuery)) ||
-      (ticket.checkedInByName && ticket.checkedInByName.toLowerCase().includes(cleanQuery));
+      (ticket.checkedInByName && ticket.checkedInByName.toLowerCase().includes(cleanQuery)) ||
+      (ticket.stripePaymentIntentId &&
+        ticket.stripePaymentIntentId.toLowerCase().includes(cleanQuery));
 
     return matchesEvent && matchesStatus && matchesQuery;
   });
@@ -318,13 +857,13 @@ export function getUserPurchasedTickets(
   const userPhone = normalizePhone(user.phoneNumber);
   const userName = (user.displayName || '').trim().toLowerCase();
 
-  const matched = tickets.filter((t) => {
+  return tickets.filter((t) => {
+    if (t.status === 'cancelled') return false;
     if (user.uid && t.buyerUid && t.buyerUid === user.uid) return true;
     if (userEmail && normalizeEmail(t.guestEmail) === userEmail) return true;
-    if (userPhone && userPhone.length >= 8 && normalizePhone(t.guestPhone) === userPhone) return true;
-    if (userName && t.guestName.trim().toLowerCase() === userName) return true;
+    if (userPhone && userPhone.length >= 8 && normalizePhone(t.guestPhone) === userPhone)
+      return true;
+    if (userName && t.guestName.trim().toLowerCase().startsWith(userName)) return true;
     return false;
   });
-
-  return matched;
 }

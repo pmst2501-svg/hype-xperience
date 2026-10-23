@@ -5,13 +5,14 @@ import {
   Collaborator,
   VipTable,
   AdminTab,
+  StripeOrder,
+  OrganizerProfile,
 } from '../types/ticket';
 import { calculateTicketingMetrics, filterTickets } from '../utils/ticketingLogic';
 import { EventMap } from './EventMap';
 import { CalendarView } from './CalendarView';
 import {
   Ticket as TicketIcon,
-  DoorOpen,
   Coins,
   UserCheck,
   Search,
@@ -25,17 +26,20 @@ import {
   Sliders,
   Mail,
   Phone,
-  ShieldCheck,
   Clock,
   Trash2,
+  CreditCard,
+  Building2,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
   event: EventItem;
   allEvents: EventItem[];
+  organizer: OrganizerProfile;
   tickets: Ticket[];
   collaborators: Collaborator[];
   tables: VipTable[];
+  stripeOrders: StripeOrder[];
   activeTab: AdminTab;
   onChangeTab: (tab: AdminTab) => void;
   onOpenNewTicketModal: () => void;
@@ -43,6 +47,7 @@ interface AdminDashboardProps {
   onOpenScannerModal: () => void;
   onOpenEditEventModal: () => void;
   onOpenCreateEventModal: () => void;
+  onOpenEditOrganizerModal: () => void;
   onSelectEvent: (eventId: string) => void;
   onCheckInTicket: (ticketId: string) => void;
   onCancelTicket: (ticketId: string) => void;
@@ -53,9 +58,11 @@ interface AdminDashboardProps {
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   event,
   allEvents,
+  organizer,
   tickets,
   collaborators,
   tables,
+  stripeOrders,
   activeTab,
   onChangeTab,
   onOpenNewTicketModal,
@@ -63,6 +70,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onOpenScannerModal,
   onOpenEditEventModal,
   onOpenCreateEventModal,
+  onOpenEditOrganizerModal,
   onSelectEvent,
   onCheckInTicket,
   onCancelTicket,
@@ -72,55 +80,108 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [ticketSearch, setTicketSearch] = useState('');
   const [ticketStatusFilter, setTicketStatusFilter] = useState('all');
 
+  const hasPublishedEvents = allEvents.length > 0;
+
   const metrics = calculateTicketingMetrics(
     tickets,
     tables,
     event.totalCapacity,
-    event.id
+    hasPublishedEvents ? event.id : undefined
   );
   const filteredTickets = filterTickets(
     tickets,
     ticketSearch,
     ticketStatusFilter,
-    event.id
+    hasPublishedEvents ? event.id : undefined
   );
   const scannedTickets = tickets.filter(
-    (t) => t.eventId === event.id && t.status === 'used'
+    (t) => (!hasPublishedEvents || t.eventId === event.id) && t.status === 'used'
   );
 
   return (
     <div className="space-y-6">
-      {/* Creator Quick Event Bar (Switch Active Event, Edit Multimedia, or Create New Event) */}
+      {/* Organization & Onboarding Progress Banner */}
+      <div className="glass rounded-3xl p-4 border border-emerald-500/25 flex flex-col @md:flex-row items-start @md:items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <img
+            src={organizer.avatar}
+            alt={organizer.name || 'Productora'}
+            className="w-11 h-11 rounded-2xl object-cover border border-emerald-400/50 shrink-0"
+          />
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-extrabold text-white truncate">
+                {organizer.name || 'Registra el Nombre de tu Productora'}
+              </span>
+              <span className="text-[10px] font-mono bg-[#635BFF]/25 text-indigo-300 px-2 py-0.5 rounded-full border border-[#635BFF]/40 font-bold">
+                STRIPE CONNECT ACTIVO
+              </span>
+            </div>
+            <div className="text-[11px] text-neutral-400 truncate mt-0.5">
+              {organizer.email || 'Configura los datos de tu organización'} · Eventos: {allEvents.length} · Staff: {collaborators.length}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 w-full @md:w-auto">
+          <button
+            type="button"
+            onClick={onOpenEditOrganizerModal}
+            className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold flex items-center gap-1.5 border border-white/15 cursor-pointer"
+          >
+            <Building2 className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Editar Productora</span>
+          </button>
+          <button
+            type="button"
+            onClick={onOpenCreateEventModal}
+            className="flex-1 @md:flex-initial px-3.5 py-2 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-black text-xs font-extrabold flex items-center justify-center gap-1.5 shadow-lg cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Registrar Próximo Evento</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Creator Quick Event Bar */}
       <div className="glass rounded-2xl p-3.5 border border-white/10 flex flex-col @md:flex-row items-stretch @md:items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-[11px] font-mono uppercase text-neutral-400 shrink-0 mr-1">
-            Eventos ({allEvents.length}):
+            Eventos Publicados ({allEvents.length}):
           </span>
-          {allEvents.map((evt) => (
-            <button
-              key={evt.id}
-              type="button"
-              onClick={() => onSelectEvent(evt.id)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer text-left ${
-                evt.id === event.id
-                  ? 'bg-emerald-500 text-black shadow-md'
-                  : 'bg-white/5 text-neutral-300 hover:bg-white/15 border border-white/10'
-              }`}
-            >
-              {evt.title}
-            </button>
-          ))}
+          {allEvents.length === 0 ? (
+            <span className="text-xs text-amber-300 font-semibold">
+              Aún no has registrado ningún evento. Haz clic en &ldquo;+ Nuevo Evento&rdquo; para publicarlo.
+            </span>
+          ) : (
+            allEvents.map((evt) => (
+              <button
+                key={evt.id}
+                type="button"
+                onClick={() => onSelectEvent(evt.id)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer text-left ${
+                  evt.id === event.id
+                    ? 'bg-emerald-500 text-black shadow-md'
+                    : 'bg-white/5 text-neutral-300 hover:bg-white/15 border border-white/10'
+                }`}
+              >
+                {evt.title}
+              </button>
+            ))
+          )}
         </div>
 
         <div className="grid grid-cols-2 sm:flex items-center gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={onOpenEditEventModal}
-            className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold flex items-center justify-center gap-1.5 border border-white/15 transition cursor-pointer min-w-0"
-          >
-            <Sliders className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-            <span className="truncate">Editar Evento</span>
-          </button>
+          {hasPublishedEvents && (
+            <button
+              type="button"
+              onClick={onOpenEditEventModal}
+              className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold flex items-center justify-center gap-1.5 border border-white/15 transition cursor-pointer min-w-0"
+            >
+              <Sliders className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span className="truncate">Editar Evento</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={onOpenCreateEventModal}
@@ -134,7 +195,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* 4 KPI METRICS GRID */}
       <div className="grid grid-cols-2 @md:grid-cols-4 gap-3">
-        {/* Metric 1: Tickets Sold */}
         <div className="glass rounded-2xl p-3.5 flex flex-col justify-between border border-white/10 shadow-xl">
           <div className="flex items-center justify-between text-white/60 text-[11px]">
             <span>Boletos Vendidos</span>
@@ -154,7 +214,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         </div>
 
-        {/* Metric 2: Validated QR Check-ins */}
         <div className="glass rounded-2xl p-3.5 flex flex-col justify-between border border-white/10 shadow-xl">
           <div className="flex items-center justify-between text-white/60 text-[11px]">
             <span>QRs Escaneados</span>
@@ -172,33 +231,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         </div>
 
-        {/* Metric 3: Total Revenue */}
         <div className="glass rounded-2xl p-3.5 flex flex-col justify-between border border-white/10 shadow-xl">
           <div className="flex items-center justify-between text-white/60 text-[11px]">
-            <span>Recaudación Total</span>
+            <span>Recaudación Stripe</span>
             <Coins className="w-3.5 h-3.5 text-amber-400 shrink-0" />
           </div>
           <div className="mt-2 tabular-nums">
-            <span className="text-lg font-black mono gold-text">
-              ${metrics.totalRevenue.toLocaleString()} {event.currency}
+            <span className="text-lg font-black mono text-emerald-400">
+              ${metrics.totalRevenue.toLocaleString()} {event.currency || 'MXN'}
             </span>
           </div>
-          <div className="text-[10px] text-emerald-400/80 mt-1 flex items-center gap-1 font-medium">
-            <span>Boletos QR + Sunbeds VIP</span>
+          <div className="text-[10px] text-indigo-300 mt-1 flex items-center gap-1 font-medium">
+            <span>{stripeOrders.length} pagos procesados en Stripe</span>
           </div>
         </div>
 
-        {/* Metric 4: Active Staff */}
         <div className="glass rounded-2xl p-3.5 flex flex-col justify-between border border-white/10 shadow-xl">
           <div className="flex items-center justify-between text-white/60 text-[11px]">
-            <span>Colaboradores QR</span>
+            <span>Cuentas de Staff QR</span>
             <UserCheck className="w-3.5 h-3.5 text-purple-400 shrink-0" />
           </div>
           <div className="mt-2 flex items-baseline gap-1.5 tabular-nums">
             <span className="text-xl font-black mono text-purple-400">
               {collaborators.filter((c) => c.status === 'active').length}
             </span>
-            <span className="text-xs text-white/40">autorizados</span>
+            <span className="text-xs text-white/40">activos</span>
           </div>
           <div className="text-[10px] text-white/50 mt-1">Solo escaneo de boletos</div>
         </div>
@@ -206,14 +263,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* DASHBOARD TABS CONTAINER */}
       <div className="glass rounded-3xl overflow-hidden border border-white/10 shadow-2xl">
-        {/* Navigation bar for tabs — responsive grid on phones, pill row on larger screens */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:flex md:flex-wrap items-center gap-2 border-b border-white/10 p-3 sm:px-4 sm:py-3 bg-black/40">
+        <div className="grid grid-cols-2 sm:grid-cols-4 md:flex md:flex-wrap items-center gap-2 border-b border-white/10 p-3 sm:px-4 sm:py-3 bg-black/40">
           <button
             type="button"
             onClick={() => onChangeTab('tickets')}
             className={`px-3 py-2 rounded-2xl text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer min-w-0 ${
               activeTab === 'tickets'
-                ? 'bg-white text-black shadow-lg shadow-white/15 font-bold'
+                ? 'bg-white text-black shadow-lg font-bold'
                 : 'text-white/75 hover:text-white bg-white/5 hover:bg-white/10'
             }`}
           >
@@ -223,10 +279,36 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
           <button
             type="button"
+            onClick={() => onChangeTab('collaborators')}
+            className={`px-3 py-2 rounded-2xl text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer min-w-0 ${
+              activeTab === 'collaborators'
+                ? 'bg-purple-500 text-white shadow-lg font-bold'
+                : 'text-white/75 hover:text-white bg-white/5 hover:bg-white/10'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">Trabajadores / Staff ({collaborators.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onChangeTab('stripe')}
+            className={`px-3 py-2 rounded-2xl text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer min-w-0 ${
+              activeTab === 'stripe'
+                ? 'bg-[#635BFF] text-white shadow-lg font-bold'
+                : 'text-white/75 hover:text-white bg-white/5 hover:bg-white/10'
+            }`}
+          >
+            <CreditCard className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">Pagos Stripe ({stripeOrders.length})</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => onChangeTab('qrscans')}
             className={`px-3 py-2 rounded-2xl text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer min-w-0 ${
               activeTab === 'qrscans'
-                ? 'bg-cyan-400 text-black shadow-lg shadow-cyan-400/20 font-bold'
+                ? 'bg-cyan-400 text-black shadow-lg font-bold'
                 : 'text-white/75 hover:text-white bg-white/5 hover:bg-white/10'
             }`}
           >
@@ -236,41 +318,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
           <button
             type="button"
-            onClick={() => onChangeTab('collaborators')}
-            className={`px-3 py-2 rounded-2xl text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer min-w-0 ${
-              activeTab === 'collaborators'
-                ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/20 font-bold'
-                : 'text-white/75 hover:text-white bg-white/5 hover:bg-white/10'
-            }`}
-          >
-            <Users className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate">Staff ({collaborators.length})</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => onChangeTab('tables')}
-            className={`px-3 py-2 rounded-2xl text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer min-w-0 ${
-              activeTab === 'tables'
-                ? 'bg-emerald-500 text-black shadow-lg shadow-emerald-500/20 font-bold'
-                : 'text-white/75 hover:text-white bg-white/5 hover:bg-white/10'
-            }`}
-          >
-            <GlassWater className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate">Sunbeds VIP ({tables.length})</span>
-          </button>
-
-          <button
-            type="button"
             onClick={() => onChangeTab('location')}
             className={`px-3 py-2 rounded-2xl text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer min-w-0 ${
               activeTab === 'location'
-                ? 'bg-cyan-500 text-black shadow-lg shadow-cyan-500/20 font-bold'
+                ? 'bg-cyan-500 text-black shadow-lg font-bold'
                 : 'text-white/75 hover:text-white bg-white/5 hover:bg-white/10'
             }`}
           >
             <MapPin className="w-3.5 h-3.5 text-cyan-300 shrink-0" />
-            <span className="truncate">Mapa Acapulco</span>
+            <span className="truncate">Mapa</span>
           </button>
 
           <button
@@ -278,7 +334,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             onClick={() => onChangeTab('calendar')}
             className={`px-3 py-2 rounded-2xl text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer min-w-0 ${
               activeTab === 'calendar'
-                ? 'bg-amber-300 text-black shadow-lg shadow-amber-300/20 font-bold'
+                ? 'bg-amber-300 text-black shadow-lg font-bold'
                 : 'text-white/75 hover:text-white bg-white/5 hover:bg-white/10'
             }`}
           >
@@ -299,7 +355,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     type="text"
                     value={ticketSearch}
                     onChange={(e) => setTicketSearch(e.target.value)}
-                    placeholder="Buscar por nombre, correo, folio QR o zona..."
+                    placeholder="Buscar por nombre del comprador, correo, folio QR o ID Stripe..."
                     className="w-full bg-black/40 border border-white/10 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-white/40 outline-none focus:border-emerald-500"
                   />
                 </div>
@@ -331,105 +387,334 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     className="flex-1 sm:flex-initial px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/20 transition cursor-pointer min-w-0"
                   >
                     <Plus className="w-4 h-4 shrink-0" />
-                    <span className="truncate">Emitir Boleto QR</span>
+                    <span className="truncate">Comprar / Emitir Boleto QR</span>
                   </button>
                 </div>
               </div>
 
-              {/* Tickets Table */}
-              <div className="overflow-x-auto rounded-2xl border border-white/10 bg-black/20">
-                <table className="w-full text-left text-xs text-white/80">
-                  <thead className="bg-black/40 text-[11px] font-mono uppercase text-white/50 border-b border-white/10">
-                    <tr>
-                      <th className="px-4 py-3">Folio QR</th>
-                      <th className="px-4 py-3">Titular / Perfil</th>
-                      <th className="px-4 py-3">Zona</th>
-                      <th className="px-4 py-3">Precio</th>
-                      <th className="px-4 py-3">Estado QR</th>
-                      <th className="px-4 py-3 text-right">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5">
-                    {filteredTickets.map((t) => (
-                      <tr key={t.id} className="hover:bg-white/5 transition">
-                        <td className="px-4 py-3 font-mono font-bold text-amber-300 tabular-nums">
-                          {t.folio}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="font-semibold text-white">{t.guestName}</div>
-                          <div className="text-[10px] text-white/40">{t.guestEmail}</div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="px-2 py-0.5 rounded-full bg-white/10 text-white/80 text-[10px] font-medium">
-                            {t.tier}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 font-mono text-white/90 tabular-nums">
-                          ${t.price.toLocaleString()} MXN
-                        </td>
-                        <td className="px-4 py-3">
-                          <span
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                              t.status === 'valid'
-                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                                : t.status === 'used'
-                                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
-                                : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                            }`}
-                          >
-                            {t.status === 'valid'
-                              ? 'QR Válido'
-                              : t.status === 'used'
-                              ? `Escaneado ${t.usedAt || ''}`
-                              : 'Cancelado'}
-                          </span>
-                          {t.checkedInByName && (
-                            <div className="text-[10px] text-white/40 mt-0.5">
-                              Por: {t.checkedInByName}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-right space-x-1 whitespace-nowrap">
-                          {t.status === 'valid' && (
-                            <button
-                              type="button"
-                              onClick={() => onCheckInTicket(t.id)}
-                              className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-[11px] font-medium border border-emerald-500/30 cursor-pointer"
-                              title="Registrar check-in QR"
-                            >
-                              Validar QR
-                            </button>
-                          )}
-                          {t.status !== 'cancelled' && (
-                            <button
-                              type="button"
-                              onClick={() => onCancelTicket(t.id)}
-                              className="px-2 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-[11px] border border-rose-500/20 cursor-pointer"
-                              title="Cancelar boleto"
-                            >
-                              Cancelar
-                            </button>
-                          )}
-                        </td>
+              {filteredTickets.length === 0 ? (
+                <div className="p-10 text-center rounded-2xl bg-black/30 border border-white/10 space-y-3">
+                  <TicketIcon className="w-8 h-8 text-emerald-400/60 mx-auto" />
+                  <div className="text-sm font-bold text-white">
+                    Sin boletos vendidos todavía (Sistema limpio desde 0)
+                  </div>
+                  <p className="text-xs text-white/60 max-w-md mx-auto">
+                    Cuando tú o tus usuarios se registren como compradores y adquieran entradas con Stripe, cada boleto QR aparecerá aquí en tiempo real.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={onOpenNewTicketModal}
+                    className="px-4 py-2 rounded-xl bg-[#635BFF] hover:bg-[#5249e6] text-white text-xs font-extrabold cursor-pointer"
+                  >
+                    Probar Compra de Boleto con Stripe
+                  </button>
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-2xl border border-white/10 bg-black/20">
+                  <table className="w-full text-left text-xs text-white/80">
+                    <thead className="bg-black/40 text-[11px] font-mono uppercase text-white/50 border-b border-white/10">
+                      <tr>
+                        <th className="px-4 py-3">Folio QR</th>
+                        <th className="px-4 py-3">Comprador</th>
+                        <th className="px-4 py-3">Zona</th>
+                        <th className="px-4 py-3">Pago Stripe</th>
+                        <th className="px-4 py-3">Estado QR</th>
+                        <th className="px-4 py-3 text-right">Acciones</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {filteredTickets.map((t) => (
+                        <tr key={t.id} className="hover:bg-white/5 transition">
+                          <td className="px-4 py-3 font-mono font-bold text-amber-300 tabular-nums">
+                            {t.folio}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="font-semibold text-white">{t.guestName}</div>
+                            <div className="text-[10px] text-white/40">{t.guestEmail}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="px-2 py-0.5 rounded-full bg-white/10 text-white/80 text-[10px] font-medium">
+                              {t.tier}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="font-mono text-white/90 tabular-nums font-bold">
+                              ${t.price.toLocaleString()} MXN
+                            </div>
+                            <div className="text-[10px] text-indigo-300 font-mono truncate max-w-[140px]">
+                              {t.paymentMethod || 'Stripe Checkout'}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                t.status === 'valid'
+                                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                  : t.status === 'used'
+                                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                                  : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                              }`}
+                            >
+                              {t.status === 'valid'
+                                ? 'QR Válido'
+                                : t.status === 'used'
+                                ? `Escaneado ${t.usedAt || ''}`
+                                : 'Cancelado'}
+                            </span>
+                            {t.checkedInByName && (
+                              <div className="text-[10px] text-white/40 mt-0.5">
+                                Por: {t.checkedInByName}
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right space-x-1 whitespace-nowrap">
+                            {t.status === 'valid' && (
+                              <button
+                                type="button"
+                                onClick={() => onCheckInTicket(t.id)}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-[11px] font-medium border border-emerald-500/30 cursor-pointer"
+                              >
+                                Validar QR
+                              </button>
+                            )}
+                            {t.status !== 'cancelled' && (
+                              <button
+                                type="button"
+                                onClick={() => onCancelTicket(t.id)}
+                                className="px-2 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-[11px] border border-rose-500/20 cursor-pointer"
+                              >
+                                Cancelar
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
 
-          {/* TAB 2: LIVE QR SCANS AUDIT (Replaces Discontinued Wristbands) */}
+          {/* TAB 2: COLLABORATORS / STAFF ACCOUNTS */}
+          {activeTab === 'collaborators' && (
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Users className="w-4 h-4 text-purple-400" />
+                    <span>Gestión de Cuentas de Trabajadores / Staff QR</span>
+                  </h3>
+                  <p className="text-[11px] text-white/60">
+                    Registra las cuentas de tus trabajadores con foto, correo, contraseña, teléfono y puerta asignada. Ellos podrán iniciar sesión y escanear los QRs vendidos en tiempo real.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={onOpenNewCollabModal}
+                  className="w-full sm:w-auto px-3.5 py-2 rounded-xl bg-purple-500 hover:bg-purple-400 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-purple-500/20 transition cursor-pointer shrink-0"
+                >
+                  <Plus className="w-3.5 h-3.5 shrink-0" />
+                  <span>Crear Cuenta de Trabajador</span>
+                </button>
+              </div>
+
+              {collaborators.length === 0 ? (
+                <div className="p-10 text-center rounded-2xl bg-black/30 border border-white/10 space-y-3">
+                  <Users className="w-8 h-8 text-purple-400/60 mx-auto" />
+                  <div className="text-sm font-bold text-white">
+                    Aún no has registrado trabajadores en tu equipo
+                  </div>
+                  <p className="text-xs text-white/60 max-w-md mx-auto">
+                    Haz clic en &ldquo;Crear Cuenta de Trabajador&rdquo; para dar de alta a tu personal de acceso QR con su propio correo, contraseña y PIN operativo.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={onOpenNewCollabModal}
+                    className="px-4 py-2 rounded-xl bg-purple-500 hover:bg-purple-400 text-white text-xs font-extrabold cursor-pointer"
+                  >
+                    Registrar Primer Trabajador / Staff
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {collaborators.map((c) => (
+                    <div
+                      key={c.id}
+                      className={`glass p-4 rounded-2xl border space-y-3 transition ${
+                        c.status === 'active'
+                          ? 'border-white/10 hover:border-purple-400/40'
+                          : 'border-white/5 opacity-60'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-12 h-12 rounded-2xl overflow-hidden border border-white/20 flex-shrink-0">
+                            <img
+                              src={c.avatar}
+                              alt={c.name}
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                          <div className="min-w-0">
+                            <h4 className="text-sm font-bold text-white truncate">{c.name}</h4>
+                            <div className="text-[11px] text-purple-300 truncate">{c.roleTitle}</div>
+                            <div className="text-[10px] text-emerald-400 font-semibold">
+                              {c.assignedGate}
+                            </div>
+                          </div>
+                        </div>
+                        <span
+                          className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-full ${
+                            c.status === 'active'
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                              : 'bg-neutral-700 text-neutral-300'
+                          }`}
+                        >
+                          {c.status === 'active' ? 'ACTIVO' : 'PAUSADO'}
+                        </span>
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-black/40 border border-white/10 space-y-1.5 text-[11px]">
+                        <div className="flex items-center gap-1.5 text-white/80 truncate">
+                          <Mail className="w-3 h-3 text-purple-400 shrink-0" />
+                          <span className="truncate">{c.email}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-white/80 font-mono">
+                          <Phone className="w-3 h-3 text-emerald-400 shrink-0" />
+                          <span>{c.phone}</span>
+                        </div>
+                        <div className="flex justify-between text-white/60 pt-1 border-t border-white/10">
+                          <span>PIN Operativo:</span>
+                          <span className="text-amber-300 font-mono font-bold">{c.pin}</span>
+                        </div>
+                        <div className="flex justify-between text-white/60">
+                          <span>Boletos QR escaneados:</span>
+                          <span className="mono text-emerald-400 font-bold tabular-nums">
+                            {c.checkinsCount}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 pt-1">
+                        {onToggleCollaboratorStatus && (
+                          <button
+                            type="button"
+                            onClick={() => onToggleCollaboratorStatus(c.id)}
+                            className="flex-1 py-1.5 px-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-[11px] font-semibold transition cursor-pointer"
+                          >
+                            {c.status === 'active' ? 'Pausar Acceso' : 'Reactivar Acceso'}
+                          </button>
+                        )}
+                        {onRemoveCollaborator && (
+                          <button
+                            type="button"
+                            onClick={() => onRemoveCollaborator(c.id)}
+                            className="p-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 transition cursor-pointer"
+                            title="Eliminar trabajador"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 3: STRIPE PAYMENTS & ORDERS */}
+          {activeTab === 'stripe' && (
+            <div className="space-y-4">
+              <div className="p-4 rounded-2xl bg-[#635BFF]/15 border border-[#635BFF]/35 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <CreditCard className="w-4 h-4 text-indigo-300" />
+                    <h3 className="text-sm font-extrabold text-white">
+                      Pasarela Stripe Connect · {organizer.name || 'Productora Oficial'}
+                    </h3>
+                  </div>
+                  <p className="text-xs text-neutral-300 mt-0.5">
+                    Cuenta receptora: <strong>{organizer.stripeAccountEmail || organizer.email || 'Configurada en perfil'}</strong> · Liquidación automática en MXN.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={onOpenNewTicketModal}
+                  className="px-4 py-2 rounded-xl bg-[#635BFF] hover:bg-[#5249e6] text-white text-xs font-extrabold cursor-pointer shrink-0"
+                >
+                  Realizar Cobro con Stripe
+                </button>
+              </div>
+
+              {stripeOrders.length === 0 ? (
+                <div className="p-10 text-center rounded-2xl bg-black/30 border border-white/10 space-y-2">
+                  <CreditCard className="w-8 h-8 text-indigo-400/60 mx-auto" />
+                  <div className="text-xs font-bold text-white">
+                    Aún no hay transacciones registradas en Stripe
+                  </div>
+                  <p className="text-[11px] text-white/50">
+                    Cada compra de boletos procesada con tarjeta, Apple Pay o SPEI quedará registrada aquí con su PaymentIntent (`pi_...`).
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-2xl border border-white/10 bg-black/20">
+                  <table className="w-full text-left text-xs text-white/80">
+                    <thead className="bg-black/40 text-[11px] font-mono uppercase text-white/50 border-b border-white/10">
+                      <tr>
+                        <th className="px-4 py-3">PaymentIntent / Recibo</th>
+                        <th className="px-4 py-3">Comprador</th>
+                        <th className="px-4 py-3">Evento & Folios QR</th>
+                        <th className="px-4 py-3">Método</th>
+                        <th className="px-4 py-3 text-right">Total Stripe</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {stripeOrders.map((ord) => (
+                        <tr key={ord.id} className="hover:bg-white/5">
+                          <td className="px-4 py-3 font-mono">
+                            <div className="font-bold text-indigo-300">{ord.paymentIntentId}</div>
+                            <div className="text-[10px] text-neutral-400">{ord.receiptNumber}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="font-bold text-white">{ord.buyerName}</div>
+                            <div className="text-[10px] text-neutral-400">{ord.buyerEmail}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="text-white font-semibold">{ord.eventTitle}</div>
+                            <div className="text-[10px] font-mono text-amber-300">
+                              {ord.quantity}x {ord.tier} ({ord.ticketFolios.join(', ')})
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="px-2 py-0.5 rounded-full bg-white/10 text-white text-[10px] font-mono">
+                              {ord.paymentMethodLabel}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono font-bold text-emerald-400 tabular-nums">
+                            ${ord.totalAmount.toLocaleString()} {ord.currency}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 4: LIVE QR SCANS AUDIT */}
           {activeTab === 'qrscans' && (
             <div className="space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
                     <QrCode className="w-4 h-4 text-cyan-400" />
-                    <span>Bitácora de Escaneos QR en Tiempo Real · Oleaje Beach Club</span>
+                    <span>Bitácora de Escaneos QR en Tiempo Real</span>
                   </h3>
                   <p className="text-[11px] text-white/60">
-                    Monitorea al instante cada boleto escaneado por tus colaboradores autorizados en los accesos del beach club.
+                    Monitorea al instante cada boleto escaneado por tus trabajadores en puerta.
                   </p>
                 </div>
                 <button
@@ -446,10 +731,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div className="p-10 text-center rounded-2xl bg-black/30 border border-white/10 space-y-2">
                   <QrCode className="w-8 h-8 text-white/30 mx-auto" />
                   <div className="text-xs font-bold text-white">
-                    Aún no hay boletos escaneados en este evento
+                    Aún no hay boletos escaneados en puerta
                   </div>
                   <p className="text-[11px] text-white/50">
-                    Cuando tus colaboradores escaneen el código QR individual de un asistente en puerta, aparecerá aquí en tiempo real.
+                    Cuando el trabajador escanee el código QR del comprador, aparecerá aquí en tiempo real.
                   </p>
                 </div>
               ) : (
@@ -501,175 +786,40 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           )}
 
-          {/* TAB 3: COLLABORATORS / STAFF (Authorized by Email or Phone for Scoped QR Check-in) */}
-          {activeTab === 'collaborators' && (
-            <div className="space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Users className="w-4 h-4 text-purple-400" />
-                    <span>Colaboradores Autorizados para Escaneo QR en Tiempo Real</span>
-                  </h3>
-                  <p className="text-[11px] text-white/60">
-                    Autoriza colaboradores por su correo electrónico o teléfono registrado. Ellos solo tendrán acceso al módulo de escaneo y registro de QRs de boletos vendidos.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={onOpenNewCollabModal}
-                  className="w-full sm:w-auto px-3.5 py-2 rounded-xl bg-purple-500 hover:bg-purple-400 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-purple-500/20 transition cursor-pointer min-w-0 shrink-0"
-                >
-                  <Plus className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">Autorizar Colaborador (Email / Tel)</span>
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {collaborators.map((c) => (
-                  <div
-                    key={c.id}
-                    className={`glass p-4 rounded-2xl border space-y-3 transition ${
-                      c.status === 'active'
-                        ? 'border-white/10 hover:border-purple-400/40'
-                        : 'border-white/5 opacity-60'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-12 h-12 rounded-2xl overflow-hidden border border-white/20 flex-shrink-0">
-                          <img
-                            src={c.avatar}
-                            alt={c.name}
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                        <div className="min-w-0">
-                          <h4 className="text-sm font-bold text-white truncate">{c.name}</h4>
-                          <div className="text-[11px] text-purple-300 truncate">{c.roleTitle}</div>
-                          <div className="text-[10px] text-emerald-400 font-semibold">
-                            {c.assignedGate}
-                          </div>
-                        </div>
-                      </div>
-                      <span
-                        className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-full ${
-                          c.status === 'active'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                            : 'bg-neutral-700 text-neutral-300'
-                        }`}
-                      >
-                        {c.status === 'active' ? 'ACTIVO' : 'PAUSADO'}
-                      </span>
-                    </div>
-
-                    <div className="p-2.5 rounded-xl bg-black/40 border border-white/10 space-y-1.5 text-[11px]">
-                      <div className="flex items-center gap-1.5 text-white/80 truncate">
-                        <Mail className="w-3 h-3 text-purple-400 shrink-0" />
-                        <span className="truncate">{c.email}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 text-white/80 font-mono">
-                        <Phone className="w-3 h-3 text-emerald-400 shrink-0" />
-                        <span>{c.phone}</span>
-                      </div>
-                      <div className="flex justify-between text-white/60 pt-1 border-t border-white/10">
-                        <span>Permiso asignado:</span>
-                        <span className="text-amber-300 font-semibold">Solo Escaneo QR</span>
-                      </div>
-                      <div className="flex justify-between text-white/60">
-                        <span>Boletos QR escaneados:</span>
-                        <span className="mono text-emerald-400 font-bold tabular-nums">
-                          {c.checkinsCount}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between gap-2 pt-1">
-                      {onToggleCollaboratorStatus && (
-                        <button
-                          type="button"
-                          onClick={() => onToggleCollaboratorStatus(c.id)}
-                          className="flex-1 py-1.5 px-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-[11px] font-semibold transition cursor-pointer"
-                        >
-                          {c.status === 'active' ? 'Pausar Acceso' : 'Reactivar Acceso'}
-                        </button>
-                      )}
-                      {onRemoveCollaborator && (
-                        <button
-                          type="button"
-                          onClick={() => onRemoveCollaborator(c.id)}
-                          className="p-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 transition cursor-pointer"
-                          title="Revocar colaborador"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* TAB 4: TABLES VIP & SUNBEDS OLEAJE BEACH CLUB */}
+          {/* TAB 5: TABLES VIP */}
           {activeTab === 'tables' && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
                     <GlassWater className="w-4 h-4 text-emerald-400" />
-                    <span>Camas Balinesas, Sunbeds & Mesas VIP · Oleaje Beach Club</span>
+                    <span>Camas Balinesas, Sunbeds & Mesas VIP</span>
                   </h3>
-                  <p className="text-[11px] text-white/60">
-                    Zonas frente al mar, alberca infinity y cabina DJ en Acapulco Diamante.
-                  </p>
                 </div>
               </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-                {tables.map((tbl) => (
-                  <div
-                    key={tbl.id}
-                    className="glass p-4 rounded-2xl border border-white/10 space-y-2 hover:border-amber-400/40 transition"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-white">{tbl.tableNumber}</span>
-                      <span
-                        className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
-                          tbl.status === 'occupied'
-                            ? 'bg-rose-500/20 text-rose-300'
-                            : tbl.status === 'reserved'
-                            ? 'bg-amber-500/20 text-amber-300'
-                            : 'bg-emerald-500/20 text-emerald-300'
-                        }`}
-                      >
-                        {tbl.status === 'occupied'
-                          ? 'OCUPADA'
-                          : tbl.status === 'reserved'
-                          ? 'RESERVADA'
-                          : 'DISPONIBLE'}
-                      </span>
+              {tables.length === 0 ? (
+                <div className="p-8 text-center rounded-2xl bg-black/30 border border-white/10 text-xs text-neutral-400">
+                  Las reservaciones de Mesas VIP compradas con Stripe aparecerán en esta sección.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                  {tables.map((tbl) => (
+                    <div
+                      key={tbl.id}
+                      className="glass p-4 rounded-2xl border border-white/10 space-y-2"
+                    >
+                      <div className="text-xs font-bold text-white">{tbl.tableNumber}</div>
+                      <div className="text-sm font-mono font-bold text-amber-300">
+                        ${tbl.price.toLocaleString()} MXN
+                      </div>
                     </div>
-
-                    <div className="text-[11px] text-white/60">{tbl.zone}</div>
-                    <div className="text-sm font-mono font-bold text-amber-300 tabular-nums">
-                      ${tbl.price.toLocaleString()} MXN
-                    </div>
-
-                    <div className="text-[10px] text-white/50 pt-1 border-t border-white/10">
-                      Capacidad: {tbl.seats} personas
-                      {tbl.reservedBy && (
-                        <div className="text-white/80 font-medium truncate mt-0.5">
-                          {tbl.reservedBy}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
-          {/* TAB 5: MINIMAP OLEAJE BEACH CLUB ACAPULCO */}
+          {/* TAB 6: MAP */}
           {activeTab === 'location' && (
             <EventMap
               event={event}
@@ -678,7 +828,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             />
           )}
 
-          {/* TAB 6: CALENDAR */}
+          {/* TAB 7: CALENDAR */}
           {activeTab === 'calendar' && (
             <CalendarView
               events={allEvents}

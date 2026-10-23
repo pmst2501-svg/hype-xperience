@@ -1,16 +1,19 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // User profile: readable and writable for registered users and live preview sessions
+    // Registered user profiles (Producers, Staff, Buyers)
     match /users/{userId} {
-      allow read: if true;
-      allow write: if true;
+      allow read, write: if true;
+    }
+
+    // Registered event producer organizations
+    match /organizers/{orgId} {
+      allow read, write: if true;
     }
 
     // Events catalog & multimedia
     match /events/{eventId} {
-      allow read: if true;
-      allow write: if true;
+      allow read, write: if true;
 
       match /tickets/{ticketId} {
         allow read, write: if true;
@@ -22,8 +25,18 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
-    // Authorized collaborators collection (scoped QR scanners)
+    // Authorized collaborators / staff collection (scoped QR scanners)
     match /collaborators/{collabId} {
+      allow read, write: if true;
+    }
+
+    // Stripe checkout orders & payment intents
+    match /orders/{orderId} {
+      allow read, write: if true;
+    }
+
+    // VIP tables & sunbeds
+    match /tables/{tableId} {
       allow read, write: if true;
     }
 

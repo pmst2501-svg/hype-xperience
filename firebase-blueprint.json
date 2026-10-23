@@ -2,21 +2,55 @@
   "entities": {
     "UserProfile": {
       "title": "UserProfile",
-      "description": "User profile with authentication and contact information",
+      "description": "Registered user profile from zero (Producer, Staff, or Buyer) with organization, photo, credentials, and role",
       "type": "object",
       "properties": {
-        "uid": { "type": "string", "description": "Firebase Auth user identifier" },
-        "displayName": { "type": "string", "description": "Full name or alias" },
-        "email": { "type": "string", "format": "email", "description": "User email address" },
+        "uid": { "type": "string", "description": "Unique user identifier" },
+        "displayName": { "type": "string", "description": "Full name of representative, worker, or buyer" },
+        "email": { "type": "string", "format": "email", "description": "Registered email address" },
+        "passwordHash": { "type": "string", "description": "Hashed or stored credential for multi-profile login verification" },
         "phoneNumber": { "type": "string", "description": "Phone number with country code" },
-        "photoURL": { "type": "string", "description": "Profile picture URL or avatar" },
+        "photoURL": { "type": "string", "description": "Profile picture URL or base64 data URI" },
         "role": { "type": "string", "enum": ["admin", "collab", "user"], "description": "Role in Hype Ticket platform" },
+        "company": { "type": "string", "description": "Producer or organization name" },
+        "organizationId": { "type": "string", "description": "Linked organization ID" },
+        "taxId": { "type": "string", "description": "RFC / Tax ID for event producer" },
+        "city": { "type": "string", "description": "City of origin or venue operations" },
+        "instagram": { "type": "string", "description": "Official Instagram handle" },
+        "website": { "type": "string", "description": "Official website URL" },
+        "stripeAccountEmail": { "type": "string", "description": "Stripe Connect payout email or CLABE" },
+        "assignedGate": { "type": "string", "description": "Assigned access gate for staff members" },
+        "staffRoleTitle": { "type": "string", "description": "Operational role title for staff members" },
+        "pin": { "type": "string", "description": "4-digit operational PIN for staff members" },
+        "documentId": { "type": "string", "description": "ID document or INE for ticket buyers" },
         "bio": { "type": "string", "description": "Brief biography or organization details" },
-        "company": { "type": "string", "description": "Producer or organizer company name" },
-        "isRegistered": { "type": "boolean", "description": "Whether the user completed the mandatory registration gate" },
+        "isRegistered": { "type": "boolean", "description": "Whether the user completed onboarding from zero" },
         "createdAt": { "type": "string", "description": "Account registration timestamp" }
       },
-      "required": ["uid", "role"]
+      "required": ["uid", "displayName", "email", "role"]
+    },
+    "OrganizerProfile": {
+      "title": "OrganizerProfile",
+      "description": "Event production company registered by an event creator",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique organization ID" },
+        "ownerUid": { "type": "string", "description": "UID of the creator who registered the organization" },
+        "name": { "type": "string", "description": "Official organization name" },
+        "tagline": { "type": "string", "description": "Organization slogan" },
+        "bio": { "type": "string", "description": "Company description" },
+        "avatar": { "type": "string", "description": "Organization profile photo / logo" },
+        "coverImage": { "type": "string", "description": "Banner image" },
+        "verified": { "type": "boolean", "description": "Verification status" },
+        "email": { "type": "string", "format": "email", "description": "Organization email" },
+        "phone": { "type": "string", "description": "Organization phone" },
+        "taxId": { "type": "string", "description": "RFC or Tax ID" },
+        "stripeAccountEmail": { "type": "string", "description": "Stripe Connect email for ticket payouts" },
+        "website": { "type": "string", "description": "Website" },
+        "instagram": { "type": "string", "description": "Instagram handle" },
+        "eventsCount": { "type": "number", "description": "Published events count" }
+      },
+      "required": ["id", "name", "email"]
     },
     "EventItem": {
       "title": "EventItem",
@@ -43,7 +77,7 @@
     },
     "Ticket": {
       "title": "Ticket",
-      "description": "Event admission ticket with individual QR code payload and real-time check-in trace",
+      "description": "Event admission ticket with individual QR code payload, Stripe payment record, and real-time check-in trace",
       "type": "object",
       "properties": {
         "id": { "type": "string", "description": "Unique ticket ID" },
@@ -61,21 +95,27 @@
         "usedAt": { "type": "string", "description": "Timestamp when checked in at entrance" },
         "checkedInByCollabId": { "type": "string", "description": "Collaborator ID who scanned the QR" },
         "checkedInByName": { "type": "string", "description": "Collaborator name who scanned the QR" },
-        "checkedInGate": { "type": "string", "description": "Entrance gate where QR was scanned" }
+        "checkedInGate": { "type": "string", "description": "Entrance gate where QR was scanned" },
+        "stripePaymentIntentId": { "type": "string", "description": "Stripe PaymentIntent ID" },
+        "stripeOrderId": { "type": "string", "description": "Associated Stripe Order ID" },
+        "paymentMethod": { "type": "string", "description": "Stripe payment method e.g. Visa •••• 4242" },
+        "paymentStatus": { "type": "string", "enum": ["paid", "complimentary", "refunded"], "description": "Payment status" }
       },
       "required": ["id", "eventId", "folio", "guestName", "tier", "status", "qrPayload"]
     },
     "Collaborator": {
       "title": "Collaborator",
-      "description": "Authorized collaborator allowed to scan ticket QR codes in real time",
+      "description": "Authorized staff member registered to scan ticket QR codes in real time",
       "type": "object",
       "properties": {
         "id": { "type": "string", "description": "Collaborator ID" },
+        "uid": { "type": "string", "description": "Linked user profile UID" },
         "name": { "type": "string", "description": "Full name" },
         "roleTitle": { "type": "string", "description": "Assigned role at the venue" },
         "email": { "type": "string", "format": "email", "description": "Authorized email address" },
         "phone": { "type": "string", "description": "Authorized phone number" },
         "pin": { "type": "string", "description": "4-digit access PIN" },
+        "organizationName": { "type": "string", "description": "Producer organization name" },
         "status": { "type": "string", "enum": ["active", "inactive"], "description": "Authorization status" },
         "checkinsCount": { "type": "number", "description": "Total QR check-ins registered" },
         "assignedGate": { "type": "string", "description": "Assigned venue gate" },
@@ -83,12 +123,42 @@
         "lastActive": { "type": "string", "description": "Last scan timestamp" }
       },
       "required": ["id", "name", "email", "status", "assignedGate"]
+    },
+    "StripeOrder": {
+      "title": "StripeOrder",
+      "description": "Stripe checkout payment transaction for event tickets",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique order ID" },
+        "paymentIntentId": { "type": "string", "description": "Stripe PaymentIntent ID (pi_...)" },
+        "eventId": { "type": "string", "description": "Event ID" },
+        "eventTitle": { "type": "string", "description": "Event title" },
+        "buyerUid": { "type": "string", "description": "Buyer UID" },
+        "buyerName": { "type": "string", "description": "Buyer full name" },
+        "buyerEmail": { "type": "string", "description": "Buyer email" },
+        "buyerPhone": { "type": "string", "description": "Buyer phone" },
+        "tier": { "type": "string", "description": "Ticket tier" },
+        "quantity": { "type": "number", "description": "Number of tickets purchased" },
+        "unitPrice": { "type": "number", "description": "Unit price in MXN" },
+        "serviceFee": { "type": "number", "description": "Stripe service fee in MXN" },
+        "totalAmount": { "type": "number", "description": "Total charged in MXN" },
+        "currency": { "type": "string", "description": "Currency code (MXN)" },
+        "paymentMethodLabel": { "type": "string", "description": "Card brand and last4 or payment method" },
+        "status": { "type": "string", "enum": ["succeeded", "pending", "failed"], "description": "Stripe payment status" },
+        "ticketFolios": { "type": "array", "items": { "type": "string" }, "description": "Generated ticket folios" },
+        "createdAt": { "type": "string", "description": "Payment timestamp" }
+      },
+      "required": ["id", "paymentIntentId", "eventId", "buyerName", "totalAmount", "status"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": "UserProfile",
-      "description": "User profiles for registered attendees, collaborators, and creators"
+      "description": "User profiles for registered attendees, staff collaborators, and event creators"
+    },
+    "/organizers/{orgId}": {
+      "schema": "OrganizerProfile",
+      "description": "Registered event production organizations"
     },
     "/events/{eventId}": {
       "schema": "EventItem",
@@ -96,11 +166,15 @@
     },
     "/tickets/{ticketId}": {
       "schema": "Ticket",
-      "description": "Issued tickets with individual QR codes and real-time scan status"
+      "description": "Issued tickets with individual QR codes, Stripe payment IDs, and real-time scan status"
     },
     "/collaborators/{collabId}": {
       "schema": "Collaborator",
-      "description": "Authorized collaborators added by creators via email or phone"
+      "description": "Authorized staff members added by creators or registered from zero"
+    },
+    "/orders/{orderId}": {
+      "schema": "StripeOrder",
+      "description": "Stripe payment transactions and ticket purchase receipts"
     }
   }
 }

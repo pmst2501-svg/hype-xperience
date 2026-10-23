@@ -9,6 +9,7 @@ import {
   VipTable,
   OrganizerProfile,
   AdminTab,
+  StripeOrder,
 } from './types/ticket';
 import {
   INITIAL_EVENTS,
@@ -16,11 +17,16 @@ import {
   INITIAL_TICKETS,
   INITIAL_TABLES,
   INITIAL_ORGANIZER,
+  INITIAL_USER,
+  EMPTY_EVENT_TEMPLATE,
+  LEGACY_DEMO_IDS,
+  LEGACY_DEMO_EMAILS,
 } from './data/mockData';
 import {
   validateAndProcessTicketScan,
   findAuthorizedCollaboratorByContact,
   getUserPurchasedTickets,
+  normalizeEmail,
 } from './utils/ticketingLogic';
 import { Hero916Banner } from './components/Hero916Banner';
 import { AdminDashboard } from './components/AdminDashboard';
@@ -43,40 +49,33 @@ import {
   saveCollaboratorToCloud,
   deleteCollaboratorFromCloud,
   saveUserProfileToCloud,
+  saveOrganizerToCloud,
+  saveStripeOrderToCloud,
+  registerUserWithEmailInCloud,
   subscribeToAuthChanges,
+  subscribeToUsers,
+  subscribeToOrganizers,
   subscribeToEvents,
   subscribeToTickets,
   subscribeToCollaborators,
+  subscribeToStripeOrders,
 } from './firebase';
 
 const STORAGE_KEYS = {
-  ROLE: 'hype_ticket_role_v3',
-  THEME: 'hype_ticket_theme_v3',
-  USER_PROFILE: 'hype_ticket_user_profile_v3',
-  ADMIN_TAB: 'hype_ticket_admin_tab_v3',
-  ACTIVE_STAFF_ID: 'hype_ticket_staff_id_v3',
-  ACTIVE_EVENT_ID: 'hype_ticket_active_event_id_v3',
-  EVENTS: 'hype_ticket_events_v3',
-  STAFF: 'hype_ticket_staff_v3',
-  TICKETS: 'hype_ticket_tickets_v3',
-  TABLES: 'hype_ticket_tables_v3',
-  ORGANIZER: 'hype_ticket_organizer_v3',
-  SHOW_ACCESS_SCREEN: 'hype_ticket_show_access_v3',
-};
-
-const INITIAL_USER: UserProfile = {
-  uid: 'usr-bush-001',
-  displayName: 'Bush Brothers Producciones',
-  email: 'contacto@bushbrothers.mx',
-  phoneNumber: '+52 744 520 8800',
-  photoURL:
-    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
-  role: 'admin',
-  company: 'Bush Brothers Producciones',
-  bio: 'Productora y organizador oficial en Oleaje Beach Club Acapulco',
-  provider: 'demo',
-  isRegistered: false,
-  createdAt: new Date().toISOString(),
+  ROLE: 'hype_ticket_role_v5',
+  THEME: 'hype_ticket_theme_v5',
+  USER_PROFILE: 'hype_ticket_user_profile_v5',
+  REGISTERED_USERS: 'hype_ticket_registered_users_v5',
+  ADMIN_TAB: 'hype_ticket_admin_tab_v5',
+  ACTIVE_STAFF_ID: 'hype_ticket_staff_id_v5',
+  ACTIVE_EVENT_ID: 'hype_ticket_active_event_id_v5',
+  EVENTS: 'hype_ticket_events_v5',
+  STAFF: 'hype_ticket_staff_v5',
+  TICKETS: 'hype_ticket_tickets_v5',
+  TABLES: 'hype_ticket_tables_v5',
+  ORGANIZER: 'hype_ticket_organizer_v5',
+  STRIPE_ORDERS: 'hype_ticket_stripe_orders_v5',
+  SHOW_ACCESS_SCREEN: 'hype_ticket_show_access_v5',
 };
 
 export default function App() {
@@ -95,6 +94,22 @@ export default function App() {
     }
   });
 
+  const [registeredUsers, setRegisteredUsers] = useState<UserProfile[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.REGISTERED_USERS);
+      const parsed: UserProfile[] = saved ? JSON.parse(saved) : [];
+      return parsed.filter(
+        (u) =>
+          u &&
+          u.uid &&
+          !LEGACY_DEMO_IDS.has(u.uid) &&
+          !LEGACY_DEMO_EMAILS.has((u.email || '').trim().toLowerCase())
+      );
+    } catch {
+      return [];
+    }
+  });
+
   const [organizer, setOrganizer] = useState<OrganizerProfile>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.ORGANIZER);
@@ -104,7 +119,6 @@ export default function App() {
     }
   });
 
-  // Mandatory registration gate on app open unless user already registered or ?autostart=1 is set
   const [showAccessScreen, setShowAccessScreen] = useState<boolean>(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('autostart') === '1') {
@@ -130,7 +144,9 @@ export default function App() {
     const saved = localStorage.getItem(STORAGE_KEYS.ADMIN_TAB) as AdminTab | null;
     if (
       saved &&
-      ['tickets', 'qrscans', 'collaborators', 'tables', 'location', 'calendar'].includes(saved)
+      ['tickets', 'qrscans', 'collaborators', 'stripe', 'tables', 'location', 'calendar'].includes(
+        saved
+      )
     ) {
       return saved;
     }
@@ -140,33 +156,36 @@ export default function App() {
   const [events, setEvents] = useState<EventItem[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.EVENTS);
-      return saved ? JSON.parse(saved) : INITIAL_EVENTS;
+      const parsed: EventItem[] = saved ? JSON.parse(saved) : INITIAL_EVENTS;
+      return parsed.filter((e) => e && e.id && !LEGACY_DEMO_IDS.has(e.id));
     } catch {
       return INITIAL_EVENTS;
     }
   });
 
   const [activeEventId, setActiveEventId] = useState<string>(() => {
-    return localStorage.getItem(STORAGE_KEYS.ACTIVE_EVENT_ID) || INITIAL_EVENTS[0].id;
+    return localStorage.getItem(STORAGE_KEYS.ACTIVE_EVENT_ID) || '';
   });
 
   const [staff, setStaff] = useState<Collaborator[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.STAFF);
-      return saved ? JSON.parse(saved) : INITIAL_STAFF;
+      const parsed: Collaborator[] = saved ? JSON.parse(saved) : INITIAL_STAFF;
+      return parsed.filter((c) => c && c.id && !LEGACY_DEMO_IDS.has(c.id));
     } catch {
       return INITIAL_STAFF;
     }
   });
 
   const [activeStaffId, setActiveStaffId] = useState<string>(() => {
-    return localStorage.getItem(STORAGE_KEYS.ACTIVE_STAFF_ID) || INITIAL_STAFF[0].id;
+    return localStorage.getItem(STORAGE_KEYS.ACTIVE_STAFF_ID) || '';
   });
 
   const [tickets, setTickets] = useState<Ticket[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.TICKETS);
-      return saved ? JSON.parse(saved) : INITIAL_TICKETS;
+      const parsed: Ticket[] = saved ? JSON.parse(saved) : INITIAL_TICKETS;
+      return parsed.filter((t) => t && t.id && !LEGACY_DEMO_IDS.has(t.id));
     } catch {
       return INITIAL_TICKETS;
     }
@@ -178,6 +197,15 @@ export default function App() {
       return saved ? JSON.parse(saved) : INITIAL_TABLES;
     } catch {
       return INITIAL_TABLES;
+    }
+  });
+
+  const [stripeOrders, setStripeOrders] = useState<StripeOrder[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.STRIPE_ORDERS);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
     }
   });
 
@@ -223,23 +251,46 @@ export default function App() {
     if (!dynamicIslandNotification) return;
     const timer = setTimeout(() => {
       setDynamicIslandNotification(null);
-    }, 4000);
+    }, 4200);
     return () => clearTimeout(timer);
   }, [dynamicIslandNotification]);
 
-  // Subscribe to Firebase Auth & Real-Time Firestore Collections
+  // Subscribe to Real-Time Firestore Collections (Users, Organizers, Events, Tickets, Staff, Stripe Orders)
   useEffect(() => {
     const unsubAuth = subscribeToAuthChanges((fbUser) => {
-      if (fbUser) {
-        const matchedCollab = findAuthorizedCollaboratorByContact(
-          staff,
-          fbUser.email,
-          fbUser.phoneNumber
-        );
-        if (matchedCollab) {
-          setActiveStaffId(matchedCollab.id);
-        }
+      if (fbUser && !LEGACY_DEMO_IDS.has(fbUser.uid)) {
         setCurrentUser({ ...fbUser, isRegistered: true });
+      }
+    });
+
+    const unsubUsers = subscribeToUsers((cloudUsers) => {
+      if (cloudUsers.length > 0) {
+        setRegisteredUsers((prev) => {
+          const map = new Map(prev.map((u) => [normalizeEmail(u.email) || u.uid, u]));
+          for (const cu of cloudUsers) {
+            if (!LEGACY_DEMO_IDS.has(cu.uid)) {
+              const key = normalizeEmail(cu.email) || cu.uid;
+              const existing = map.get(key);
+              map.set(key, {
+                ...existing,
+                ...cu,
+                photoURL: cu.photoURL || existing?.photoURL || INITIAL_USER.photoURL,
+              });
+            }
+          }
+          return Array.from(map.values());
+        });
+      }
+    });
+
+    const unsubOrganizers = subscribeToOrganizers((cloudOrgs) => {
+      if (cloudOrgs.length > 0) {
+        const latestOrg = cloudOrgs[0];
+        setOrganizer((prev) => ({
+          ...prev,
+          ...latestOrg,
+          avatar: latestOrg.avatar || prev.avatar || INITIAL_ORGANIZER.avatar,
+        }));
       }
     });
 
@@ -252,7 +303,7 @@ export default function App() {
             map.set(ce.id, {
               ...existing,
               ...ce,
-              heroImage: ce.heroImage || existing?.heroImage || INITIAL_EVENTS[0].heroImage,
+              heroImage: ce.heroImage || existing?.heroImage || EMPTY_EVENT_TEMPLATE.heroImage,
               videoStoryUrl: ce.videoStoryUrl || existing?.videoStoryUrl,
             });
           }
@@ -278,7 +329,24 @@ export default function App() {
         setStaff((prev) => {
           const map = new Map(prev.map((c) => [c.id, c]));
           for (const cc of cloudCollabs) {
-            map.set(cc.id, cc);
+            const existing = map.get(cc.id);
+            map.set(cc.id, {
+              ...existing,
+              ...cc,
+              avatar: cc.avatar || existing?.avatar || INITIAL_USER.photoURL,
+            });
+          }
+          return Array.from(map.values());
+        });
+      }
+    });
+
+    const unsubOrders = subscribeToStripeOrders((cloudOrders) => {
+      if (cloudOrders.length > 0) {
+        setStripeOrders((prev) => {
+          const map = new Map(prev.map((o) => [o.id, o]));
+          for (const co of cloudOrders) {
+            map.set(co.id, co);
           }
           return Array.from(map.values());
         });
@@ -287,11 +355,24 @@ export default function App() {
 
     return () => {
       unsubAuth();
+      unsubUsers();
+      unsubOrganizers();
       unsubEvents();
       unsubTickets();
       unsubCollabs();
+      unsubOrders();
     };
   }, []);
+
+  const upsertRegisteredUser = (profile: UserProfile) => {
+    setRegisteredUsers((prev) => {
+      const cleanEmail = normalizeEmail(profile.email);
+      const filtered = prev.filter(
+        (u) => u.uid !== profile.uid && normalizeEmail(u.email) !== cleanEmail
+      );
+      return [profile, ...filtered];
+    });
+  };
 
   const handleEnterPortal = (targetRole?: UserRole) => {
     setShowAuthModal(false);
@@ -306,24 +387,88 @@ export default function App() {
     }, 450);
   };
 
-  const handleCompleteRegistration = (profile: UserProfile, targetRole: UserRole) => {
+  const handleCompleteRegistration = async (
+    profile: UserProfile,
+    targetRole: UserRole,
+    rawPassword?: string,
+    newOrganizer?: OrganizerProfile,
+    newCollaborator?: Collaborator
+  ) => {
+    setCurrentUser(profile);
+    upsertRegisteredUser(profile);
+
+    if (newOrganizer) {
+      setOrganizer(newOrganizer);
+      saveOrganizerToCloud(newOrganizer);
+    }
+
+    if (newCollaborator) {
+      setStaff((prev) => [newCollaborator, ...prev]);
+      setActiveStaffId(newCollaborator.id);
+      saveCollaboratorToCloud(newCollaborator);
+    } else {
+      const matchedCollab = findAuthorizedCollaboratorByContact(
+        staff,
+        profile.email,
+        profile.phoneNumber
+      );
+      if (matchedCollab) {
+        setActiveStaffId(matchedCollab.id);
+      }
+    }
+
+    if (rawPassword) {
+      registerUserWithEmailInCloud(profile, rawPassword).catch(() => {});
+    } else {
+      saveUserProfileToCloud(profile);
+    }
+
+    handleEnterPortal(targetRole);
+    setDynamicIslandNotification({
+      title:
+        targetRole === 'admin'
+          ? `Productora Registrada: ${profile.company}`
+          : targetRole === 'collab'
+          ? `Cuenta de Trabajador Activa: ${profile.displayName}`
+          : `Comprador Registrado: ${profile.displayName}`,
+      subtitle: `${profile.email} · Guardado en Firebase`,
+      type: 'info',
+    });
+  };
+
+  const handleSwitchRegisteredUser = (user: UserProfile) => {
+    setCurrentUser({ ...user, isRegistered: true });
+    upsertRegisteredUser({ ...user, isRegistered: true });
     const matchedCollab = findAuthorizedCollaboratorByContact(
       staff,
-      profile.email,
-      profile.phoneNumber
+      user.email,
+      user.phoneNumber
     );
     if (matchedCollab) {
       setActiveStaffId(matchedCollab.id);
     }
-    setCurrentUser(profile);
-    saveUserProfileToCloud(profile);
-    handleEnterPortal(targetRole);
+    handleEnterPortal(user.role);
+    setDynamicIslandNotification({
+      title: `Sesión Iniciada: ${user.displayName}`,
+      subtitle: `Rol activo: ${
+        user.role === 'admin'
+          ? 'Productora / Creador'
+          : user.role === 'collab'
+          ? 'Trabajador / Staff QR'
+          : 'Usuario Comprador'
+      }`,
+      type: 'info',
+    });
   };
 
   // Sync state with localStorage
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.USER_PROFILE, JSON.stringify(currentUser));
   }, [currentUser]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.REGISTERED_USERS, JSON.stringify(registeredUsers));
+  }, [registeredUsers]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.ORGANIZER, JSON.stringify(organizer));
@@ -365,37 +510,33 @@ export default function App() {
     localStorage.setItem(STORAGE_KEYS.TABLES, JSON.stringify(tables));
   }, [tables]);
 
-  const activeEvent = events.find((e) => e.id === activeEventId) || events[0];
-  const activeStaff = staff.find((s) => s.id === activeStaffId) || staff[0];
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.STRIPE_ORDERS, JSON.stringify(stripeOrders));
+  }, [stripeOrders]);
 
-  // Get tickets owned by current user (or show active event tickets if demo user has none yet)
-  const matchedUserTickets = getUserPurchasedTickets(tickets, currentUser);
-  const userWalletTickets =
-    matchedUserTickets.length > 0
-      ? matchedUserTickets
-      : tickets.filter((t) => t.status !== 'cancelled');
+  const activeEvent: EventItem =
+    events.find((e) => e.id === activeEventId) ||
+    events[0] || {
+      ...EMPTY_EVENT_TEMPLATE,
+      organizer: {
+        id: organizer.id || 'org-pending',
+        name: organizer.name || currentUser.company || 'Productora Oficial',
+        verified: true,
+        avatar: organizer.avatar || currentUser.photoURL,
+      },
+    };
+
+  const activeStaff: Collaborator | undefined =
+    staff.find((s) => s.id === activeStaffId) || staff[0];
+
+  const userWalletTickets = getUserPurchasedTickets(tickets, currentUser);
 
   const handleToggleTheme = () => {
     setTheme((prev) => (prev === 'dark' ? 'light' : prev === 'light' ? 'bw' : 'dark'));
   };
 
-  const handleResetData = () => {
-    localStorage.clear();
-    setRole('admin');
-    setTheme('dark');
-    setCurrentUser({ ...INITIAL_USER, isRegistered: true });
-    setAdminTab('tickets');
-    setOrganizer(INITIAL_ORGANIZER);
-    setShowAccessScreen(false);
-    setEvents(INITIAL_EVENTS);
-    setActiveEventId(INITIAL_EVENTS[0].id);
-    setStaff(INITIAL_STAFF);
-    setActiveStaffId(INITIAL_STAFF[0].id);
-    setTickets(INITIAL_TICKETS);
-    setTables(INITIAL_TABLES);
-  };
-
   const handleUpdateHeroImage = (imageUrl: string) => {
+    if (events.length === 0) return;
     setEvents((prev) =>
       prev.map((e) => {
         if (e.id === activeEvent.id) {
@@ -414,6 +555,7 @@ export default function App() {
   };
 
   const handleUpdateVideoUrl = (videoUrl: string) => {
+    if (events.length === 0) return;
     setEvents((prev) =>
       prev.map((e) => {
         if (e.id === activeEvent.id) {
@@ -431,51 +573,62 @@ export default function App() {
     });
   };
 
-  const handleIssueTickets = (newTickets: Ticket[]) => {
+  const handleIssueTickets = (newTickets: Ticket[], stripeOrder?: StripeOrder) => {
     setTickets((prev) => [...newTickets, ...prev]);
     for (const tkt of newTickets) {
       saveTicketToCloud(activeEvent.id, tkt);
     }
+    if (stripeOrder) {
+      setStripeOrders((prev) => [stripeOrder, ...prev]);
+      saveStripeOrderToCloud(stripeOrder);
+    }
     const first = newTickets[0];
     if (first) {
       setDynamicIslandNotification({
-        title:
-          newTickets.length > 1
-            ? `${newTickets.length} QRs Individuales Emitidos`
-            : 'QR Individual Emitido',
-        subtitle: `${first.guestName} · ${first.folio}`,
+        title: stripeOrder
+          ? `Pago Stripe Aprobado (${stripeOrder.paymentIntentId.slice(0, 12)}...)`
+          : `${newTickets.length} QR Emitido`,
+        subtitle: `${first.guestName} · Folio ${first.folio}`,
         type: 'ticket',
       });
     }
   };
 
   const handleValidateTicketQr = (rawCode: string) => {
+    const fallbackStaff = activeStaff || {
+      id: currentUser.uid || 'staff-active',
+      name: currentUser.displayName || 'Trabajador QR',
+      assignedGate: currentUser.assignedGate || 'Acceso Principal Costera',
+    };
+
     const result = validateAndProcessTicketScan(
       rawCode,
       tickets,
       activeEvent.id,
-      activeStaff
+      fallbackStaff
     );
 
     if (result.success && result.updatedTicket) {
       const updated = result.updatedTicket;
       setTickets((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
-      saveTicketToCloud(activeEvent.id, updated);
+      saveTicketToCloud(updated.eventId, updated);
 
-      setStaff((prev) =>
-        prev.map((s) => {
-          if (s.id === activeStaff.id) {
-            const nextCollab = {
-              ...s,
-              checkinsCount: s.checkinsCount + 1,
-              lastActive: 'Justo ahora',
-            };
-            saveCollaboratorToCloud(nextCollab);
-            return nextCollab;
-          }
-          return s;
-        })
-      );
+      if (activeStaff) {
+        setStaff((prev) =>
+          prev.map((s) => {
+            if (s.id === activeStaff.id) {
+              const nextCollab = {
+                ...s,
+                checkinsCount: s.checkinsCount + 1,
+                lastActive: 'Justo ahora',
+              };
+              saveCollaboratorToCloud(nextCollab);
+              return nextCollab;
+            }
+            return s;
+          })
+        );
+      }
 
       setDynamicIslandNotification({
         title: 'QR Validado en Puerta',
@@ -498,7 +651,7 @@ export default function App() {
       prev.map((t) => {
         if (t.id === ticketId) {
           const updated: Ticket = { ...t, status: 'cancelled' };
-          saveTicketToCloud(activeEvent.id, updated);
+          saveTicketToCloud(updated.eventId, updated);
           return updated;
         }
         return t;
@@ -506,13 +659,17 @@ export default function App() {
     );
   };
 
-  const handleAddCollaborator = (newCollab: Collaborator) => {
+  const handleAddCollaborator = (newCollab: Collaborator, workerProfile: UserProfile) => {
     setStaff((prev) => [newCollab, ...prev]);
     setActiveStaffId(newCollab.id);
     saveCollaboratorToCloud(newCollab);
+
+    upsertRegisteredUser(workerProfile);
+    saveUserProfileToCloud(workerProfile);
+
     setDynamicIslandNotification({
-      title: 'Colaborador Autorizado',
-      subtitle: `${newCollab.name} (${newCollab.assignedGate})`,
+      title: 'Cuenta de Trabajador Registrada',
+      subtitle: `${newCollab.name} (${newCollab.email}) · ${newCollab.assignedGate}`,
       type: 'info',
     });
   };
@@ -538,32 +695,46 @@ export default function App() {
   };
 
   const handleSaveEvent = (updated: EventItem) => {
-    const exists = events.some((e) => e.id === updated.id);
+    const enrichedEvent: EventItem = {
+      ...updated,
+      organizer: {
+        id: organizer.id || 'org-1',
+        name: organizer.name || currentUser.company || 'Productora Oficial',
+        verified: true,
+        avatar: organizer.avatar || currentUser.photoURL,
+      },
+    };
+    const exists = events.some((e) => e.id === enrichedEvent.id);
     if (exists) {
-      setEvents((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
+      setEvents((prev) => prev.map((e) => (e.id === enrichedEvent.id ? enrichedEvent : e)));
     } else {
-      setEvents((prev) => [updated, ...prev]);
-      setActiveEventId(updated.id);
+      setEvents((prev) => [enrichedEvent, ...prev]);
+      setActiveEventId(enrichedEvent.id);
     }
-    saveEventToCloud(updated);
+    saveEventToCloud(enrichedEvent);
     setDynamicIslandNotification({
-      title: exists ? 'Evento Actualizado en Vivo' : 'Nuevo Evento Publicado',
-      subtitle: updated.title,
+      title: exists ? 'Evento Actualizado en Vivo' : 'Próximo Evento Publicado',
+      subtitle: enrichedEvent.title,
       type: 'info',
     });
   };
 
   const handleSaveOrganizer = (updatedOrganizer: OrganizerProfile) => {
-    setOrganizer(updatedOrganizer);
+    const withId = {
+      ...updatedOrganizer,
+      id: updatedOrganizer.id || `org-${Date.now()}`,
+    };
+    setOrganizer(withId);
+    saveOrganizerToCloud(withId);
     setEvents((prev) =>
       prev.map((evt) => ({
         ...evt,
         organizer: {
           ...evt.organizer,
-          id: updatedOrganizer.id,
-          name: updatedOrganizer.name,
-          avatar: updatedOrganizer.avatar,
-          verified: updatedOrganizer.verified,
+          id: withId.id,
+          name: withId.name,
+          avatar: withId.avatar,
+          verified: withId.verified,
         },
       }))
     );
@@ -583,11 +754,13 @@ export default function App() {
         <AccessScreen
           organizer={organizer}
           currentUser={currentUser}
+          registeredUsers={registeredUsers}
           collaborators={staff}
           theme={theme}
           onToggleTheme={handleToggleTheme}
           onSelectPortal={handleEnterPortal}
           onCompleteRegistration={handleCompleteRegistration}
+          onSwitchRegisteredUser={handleSwitchRegisteredUser}
           onOpenEditProfile={() => setShowEditProfileModal(true)}
           onOpenAuthSession={() => setShowAuthModal(true)}
         />
@@ -601,9 +774,14 @@ export default function App() {
           isOpen={showAuthModal}
           onClose={() => setShowAuthModal(false)}
           currentUser={currentUser}
-          onUpdateUser={setCurrentUser}
+          registeredUsers={registeredUsers}
+          onUpdateUser={(u) => {
+            setCurrentUser(u);
+            upsertRegisteredUser(u);
+          }}
           onSwitchRole={setRole}
           onEnterApp={handleEnterPortal}
+          onOpenZeroRegistration={() => setShowAccessScreen(true)}
         />
       </div>
     );
@@ -613,7 +791,7 @@ export default function App() {
     <div
       className={`theme-${theme} @container antialiased min-h-[100dvh] w-full overflow-x-hidden bg-grid flex flex-col justify-between selection:bg-white selection:text-black transition-colors duration-200`}
     >
-      {/* Floating Live Toast Notification (Responsive for all smartphones) */}
+      {/* Floating Live Toast Notification */}
       {dynamicIslandNotification && (
         <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-1.5rem)] max-w-md pointer-events-auto animate-in fade-in">
           <div className="liquid-blur rounded-2xl px-4 py-3 border border-emerald-400/35 shadow-2xl flex items-center justify-between gap-3">
@@ -640,17 +818,17 @@ export default function App() {
         </div>
       )}
 
-      {/* Main Content Area — Adaptive across all smartphone & tablet/desktop viewports */}
+      {/* Main Content Area */}
       <main className="max-w-5xl mx-auto w-full px-3 sm:px-5 md:px-6 pt-3 sm:pt-5 pb-28 sm:pb-24 flex-1 space-y-5 sm:space-y-6">
-        {/* VIEW 1: ADMIN (CREADOR DEL EVENTO / BUSH BROTHERS) */}
+        {/* VIEW 1: ADMIN (PRODUCTORA / CREADOR DE EVENTOS) */}
         {role === 'admin' && (
           <div className="space-y-5 sm:space-y-6">
             <Hero916Banner
               event={activeEvent}
-              organizerName={organizer.name}
+              organizerName={organizer.name || currentUser.company || 'Productora Oficial'}
               onOpenStoryVideo={() => setShowStoryModal(true)}
               onOpenEditModal={() => {
-                setIsCreatingNewEvent(false);
+                setIsCreatingNewEvent(events.length === 0);
                 setShowEditEventModal(true);
               }}
               onOpenNewTicketModal={() => setShowNewTicketModal(true)}
@@ -664,9 +842,11 @@ export default function App() {
             <AdminDashboard
               event={activeEvent}
               allEvents={events}
+              organizer={organizer}
               tickets={tickets}
               collaborators={staff}
               tables={tables}
+              stripeOrders={stripeOrders}
               activeTab={adminTab}
               onChangeTab={setAdminTab}
               onOpenNewTicketModal={() => setShowNewTicketModal(true)}
@@ -680,6 +860,7 @@ export default function App() {
                 setIsCreatingNewEvent(true);
                 setShowEditEventModal(true);
               }}
+              onOpenEditOrganizerModal={() => setShowEditProfileModal(true)}
               onSelectEvent={setActiveEventId}
               onCheckInTicket={handleCheckInTicketById}
               onCancelTicket={handleCancelTicket}
@@ -689,7 +870,7 @@ export default function App() {
           </div>
         )}
 
-        {/* VIEW 2: COLLABORATOR (SOLO ESCANEO DE QRs VENDIDOS EN TIEMPO REAL) */}
+        {/* VIEW 2: COLLABORATOR / WORKER (SOLO ESCANEO DE QRs VENDIDOS EN TIEMPO REAL) */}
         {role === 'collab' && (
           <div className="space-y-5 sm:space-y-6">
             <CollabPortal
@@ -700,12 +881,12 @@ export default function App() {
               tickets={tickets}
               onOpenTicketScanner={() => setShowScannerModal(true)}
               onValidateTicketQr={handleValidateTicketQr}
-              onOpenAuthSession={() => setShowAuthModal(true)}
+              onOpenAuthSession={() => setShowAccessScreen(true)}
             />
           </div>
         )}
 
-        {/* VIEW 3: ATTENDEE / USER (CARTELERA DE CREADORES & MI PERFIL QR INDIVIDUAL) */}
+        {/* VIEW 3: ATTENDEE / BUYER (CARTELERA DE EVENTOS & COMPRA CON STRIPE) */}
         {role === 'user' && (
           <div className="space-y-5 sm:space-y-6">
             <AttendeePortal
@@ -724,7 +905,7 @@ export default function App() {
                 setRole('admin');
                 setAdminTab('location');
               }}
-              onOpenAuthProfile={() => setShowAuthModal(true)}
+              onOpenAuthProfile={() => setShowAccessScreen(true)}
             />
           </div>
         )}
@@ -744,7 +925,6 @@ export default function App() {
         onOpenScannerModal={() => setShowScannerModal(true)}
         onOpenStoryVideo={() => setShowStoryModal(true)}
         onOpenAccessScreen={() => setShowAccessScreen(true)}
-        onResetData={handleResetData}
       />
 
       {/* MODALS */}
@@ -752,9 +932,14 @@ export default function App() {
         isOpen={showAuthModal}
         onClose={() => setShowAuthModal(false)}
         currentUser={currentUser}
-        onUpdateUser={setCurrentUser}
+        registeredUsers={registeredUsers}
+        onUpdateUser={(u) => {
+          setCurrentUser(u);
+          upsertRegisteredUser(u);
+        }}
         onSwitchRole={setRole}
         onEnterApp={handleEnterPortal}
+        onOpenZeroRegistration={() => setShowAccessScreen(true)}
       />
 
       <OrganizerProfileModal
@@ -802,6 +987,7 @@ export default function App() {
       <NewCollabModal
         isOpen={showNewCollabModal}
         onClose={() => setShowNewCollabModal(false)}
+        organizationName={organizer.name || currentUser.company || 'Productora Oficial'}
         onAddCollaborator={handleAddCollaborator}
       />
     </div>
