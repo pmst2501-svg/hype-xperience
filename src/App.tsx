@@ -6,19 +6,22 @@ import {
   EventItem,
   Ticket,
   Collaborator,
-  WristbandVerification,
   VipTable,
   OrganizerProfile,
+  AdminTab,
 } from './types/ticket';
 import {
   INITIAL_EVENTS,
   INITIAL_STAFF,
   INITIAL_TICKETS,
-  INITIAL_WRISTBANDS,
   INITIAL_TABLES,
   INITIAL_ORGANIZER,
 } from './data/mockData';
-import { Header } from './components/Header';
+import {
+  validateAndProcessTicketScan,
+  findAuthorizedCollaboratorByContact,
+  getUserPurchasedTickets,
+} from './utils/ticketingLogic';
 import { Hero916Banner } from './components/Hero916Banner';
 import { AdminDashboard } from './components/AdminDashboard';
 import { CollabPortal } from './components/CollabPortal';
@@ -26,61 +29,63 @@ import { AttendeePortal } from './components/AttendeePortal';
 import { AccessScreen } from './components/AccessScreen';
 import { OrganizerProfileModal } from './components/OrganizerProfileModal';
 import { EventStoriesModal } from './components/EventStoriesModal';
-import { WristbandCaptureModal } from './components/WristbandCaptureModal';
 import { TicketScannerModal } from './components/TicketScannerModal';
 import { NewTicketModal } from './components/NewTicketModal';
 import { EditEventModal } from './components/EditEventModal';
 import { NewCollabModal } from './components/NewCollabModal';
 import { AuthSessionModal } from './components/AuthSessionModal';
 import { FloatingDock } from './components/FloatingDock';
-import { IPhoneShell } from './components/IPhoneShell';
 import { LogoLoadingScreen } from './components/LogoLoadingScreen';
+import { CheckCircle2, X } from 'lucide-react';
 import {
-  saveWristbandToCloud,
+  saveEventToCloud,
   saveTicketToCloud,
+  saveCollaboratorToCloud,
+  deleteCollaboratorFromCloud,
   saveUserProfileToCloud,
   subscribeToAuthChanges,
+  subscribeToEvents,
+  subscribeToTickets,
+  subscribeToCollaborators,
 } from './firebase';
 
 const STORAGE_KEYS = {
-  ROLE: 'hype_ticket_role_v2',
-  THEME: 'hype_ticket_theme_v2',
-  USER_PROFILE: 'hype_ticket_user_profile_v2',
-  ADMIN_TAB: 'hype_ticket_admin_tab_v2',
-  ACTIVE_STAFF_ID: 'hype_ticket_staff_id_v2',
-  ACTIVE_EVENT_ID: 'hype_ticket_active_event_id_v2',
-  EVENTS: 'hype_ticket_events_v2',
-  STAFF: 'hype_ticket_staff_v2',
-  TICKETS: 'hype_ticket_tickets_v2',
-  WRISTBANDS: 'hype_ticket_wristbands_v2',
-  TABLES: 'hype_ticket_tables_v2',
-  ORGANIZER: 'hype_ticket_organizer_v2',
-  SHOW_ACCESS_SCREEN: 'hype_ticket_show_access_v2',
+  ROLE: 'hype_ticket_role_v3',
+  THEME: 'hype_ticket_theme_v3',
+  USER_PROFILE: 'hype_ticket_user_profile_v3',
+  ADMIN_TAB: 'hype_ticket_admin_tab_v3',
+  ACTIVE_STAFF_ID: 'hype_ticket_staff_id_v3',
+  ACTIVE_EVENT_ID: 'hype_ticket_active_event_id_v3',
+  EVENTS: 'hype_ticket_events_v3',
+  STAFF: 'hype_ticket_staff_v3',
+  TICKETS: 'hype_ticket_tickets_v3',
+  TABLES: 'hype_ticket_tables_v3',
+  ORGANIZER: 'hype_ticket_organizer_v3',
+  SHOW_ACCESS_SCREEN: 'hype_ticket_show_access_v3',
 };
 
 const INITIAL_USER: UserProfile = {
   uid: 'usr-bush-001',
   displayName: 'Bush Brothers Producciones',
   email: 'contacto@bushbrothers.mx',
-  phoneNumber: '+52 55 4912 3048',
-  photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
+  phoneNumber: '+52 744 520 8800',
+  photoURL:
+    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
   role: 'admin',
   company: 'Bush Brothers Producciones',
-  bio: 'Productora y organizador oficial de festivales y eventos masivos',
+  bio: 'Productora y organizador oficial en Oleaje Beach Club Acapulco',
   provider: 'demo',
+  isRegistered: false,
   createdAt: new Date().toISOString(),
 };
 
 export default function App() {
-  // Theme state: dark, light, bw
   const [theme, setTheme] = useState<ThemeMode>(() => {
     return (localStorage.getItem(STORAGE_KEYS.THEME) as ThemeMode) || 'dark';
   });
 
-  // Minimal logo-only loading screen state
   const [isLoadingScreen, setIsLoadingScreen] = useState<boolean>(true);
 
-  // User session state
   const [currentUser, setCurrentUser] = useState<UserProfile>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.USER_PROFILE);
@@ -90,7 +95,6 @@ export default function App() {
     }
   });
 
-  // Organizer Profile state (Bush Brothers Producciones)
   const [organizer, setOrganizer] = useState<OrganizerProfile>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.ORGANIZER);
@@ -100,20 +104,37 @@ export default function App() {
     }
   });
 
-  // Access landing screen toggle (default false so authenticated users enter directly)
-  const [showAccessScreen, setShowAccessScreen] = useState<boolean>(false);
+  // Mandatory registration gate on app open unless user already registered or ?autostart=1 is set
+  const [showAccessScreen, setShowAccessScreen] = useState<boolean>(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('autostart') === '1') {
+      return false;
+    }
+    const savedGate = localStorage.getItem(STORAGE_KEYS.SHOW_ACCESS_SCREEN);
+    if (savedGate !== null) {
+      return savedGate === 'true';
+    }
+    return true;
+  });
 
-  // Role state
   const [role, setRole] = useState<UserRole>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlRole = params.get('role') as UserRole | null;
+    if (urlRole && ['admin', 'collab', 'user'].includes(urlRole)) {
+      return urlRole;
+    }
     return (localStorage.getItem(STORAGE_KEYS.ROLE) as UserRole) || 'admin';
   });
 
-  const [adminTab, setAdminTab] = useState<
-    'tickets' | 'wristbands' | 'location' | 'calendar' | 'collaborators' | 'tables'
-  >(() => {
-    return (
-      (localStorage.getItem(STORAGE_KEYS.ADMIN_TAB) as any) || 'tickets'
-    );
+  const [adminTab, setAdminTab] = useState<AdminTab>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.ADMIN_TAB) as AdminTab | null;
+    if (
+      saved &&
+      ['tickets', 'qrscans', 'collaborators', 'tables', 'location', 'calendar'].includes(saved)
+    ) {
+      return saved;
+    }
+    return 'tickets';
   });
 
   const [events, setEvents] = useState<EventItem[]>(() => {
@@ -151,15 +172,6 @@ export default function App() {
     }
   });
 
-  const [wristbands, setWristbands] = useState<WristbandVerification[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.WRISTBANDS);
-      return saved ? JSON.parse(saved) : INITIAL_WRISTBANDS;
-    } catch {
-      return INITIAL_WRISTBANDS;
-    }
-  });
-
   const [tables, setTables] = useState<VipTable[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.TABLES);
@@ -171,10 +183,10 @@ export default function App() {
 
   // Modals state
   const [showStoryModal, setShowStoryModal] = useState(false);
-  const [showWristbandCaptureModal, setShowWristbandCaptureModal] = useState(false);
   const [showScannerModal, setShowScannerModal] = useState(false);
   const [showNewTicketModal, setShowNewTicketModal] = useState(false);
   const [showEditEventModal, setShowEditEventModal] = useState(false);
+  const [isCreatingNewEvent, setIsCreatingNewEvent] = useState(false);
   const [showNewCollabModal, setShowNewCollabModal] = useState(false);
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -182,10 +194,9 @@ export default function App() {
     title: string;
     subtitle: string;
     icon?: string;
-    type?: 'wristband' | 'ticket' | 'music' | 'info';
+    type?: 'ticket' | 'music' | 'info';
   } | null>(null);
 
-  // Apply theme to document element
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.THEME, theme);
     const root = document.documentElement;
@@ -196,44 +207,123 @@ export default function App() {
     }
   }, [theme]);
 
-  // Initial logo-only loading screen on startup
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('loading') === '1') {
+      setIsLoadingScreen(true);
+      return;
+    }
     const timer = setTimeout(() => {
       setIsLoadingScreen(false);
-    }, 650);
+    }, 550);
     return () => clearTimeout(timer);
   }, []);
 
-  // Enter portal with brief logo-only loading screen
+  useEffect(() => {
+    if (!dynamicIslandNotification) return;
+    const timer = setTimeout(() => {
+      setDynamicIslandNotification(null);
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [dynamicIslandNotification]);
+
+  // Subscribe to Firebase Auth & Real-Time Firestore Collections
+  useEffect(() => {
+    const unsubAuth = subscribeToAuthChanges((fbUser) => {
+      if (fbUser) {
+        const matchedCollab = findAuthorizedCollaboratorByContact(
+          staff,
+          fbUser.email,
+          fbUser.phoneNumber
+        );
+        if (matchedCollab) {
+          setActiveStaffId(matchedCollab.id);
+        }
+        setCurrentUser({ ...fbUser, isRegistered: true });
+      }
+    });
+
+    const unsubEvents = subscribeToEvents((cloudEvents) => {
+      if (cloudEvents.length > 0) {
+        setEvents((prev) => {
+          const map = new Map(prev.map((e) => [e.id, e]));
+          for (const ce of cloudEvents) {
+            const existing = map.get(ce.id);
+            map.set(ce.id, {
+              ...existing,
+              ...ce,
+              heroImage: ce.heroImage || existing?.heroImage || INITIAL_EVENTS[0].heroImage,
+              videoStoryUrl: ce.videoStoryUrl || existing?.videoStoryUrl,
+            });
+          }
+          return Array.from(map.values());
+        });
+      }
+    });
+
+    const unsubTickets = subscribeToTickets((cloudTickets) => {
+      if (cloudTickets.length > 0) {
+        setTickets((prev) => {
+          const map = new Map(prev.map((t) => [t.id, t]));
+          for (const ct of cloudTickets) {
+            map.set(ct.id, ct);
+          }
+          return Array.from(map.values());
+        });
+      }
+    });
+
+    const unsubCollabs = subscribeToCollaborators((cloudCollabs) => {
+      if (cloudCollabs.length > 0) {
+        setStaff((prev) => {
+          const map = new Map(prev.map((c) => [c.id, c]));
+          for (const cc of cloudCollabs) {
+            map.set(cc.id, cc);
+          }
+          return Array.from(map.values());
+        });
+      }
+    });
+
+    return () => {
+      unsubAuth();
+      unsubEvents();
+      unsubTickets();
+      unsubCollabs();
+    };
+  }, []);
+
   const handleEnterPortal = (targetRole?: UserRole) => {
     setShowAuthModal(false);
     if (targetRole) {
       setRole(targetRole);
     }
+    setCurrentUser((prev) => ({ ...prev, isRegistered: true }));
     setIsLoadingScreen(true);
     setShowAccessScreen(false);
     setTimeout(() => {
       setIsLoadingScreen(false);
-    }, 650);
+    }, 450);
   };
 
-  // Sync state changes with localStorage
+  const handleCompleteRegistration = (profile: UserProfile, targetRole: UserRole) => {
+    const matchedCollab = findAuthorizedCollaboratorByContact(
+      staff,
+      profile.email,
+      profile.phoneNumber
+    );
+    if (matchedCollab) {
+      setActiveStaffId(matchedCollab.id);
+    }
+    setCurrentUser(profile);
+    saveUserProfileToCloud(profile);
+    handleEnterPortal(targetRole);
+  };
+
+  // Sync state with localStorage
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.USER_PROFILE, JSON.stringify(currentUser));
   }, [currentUser]);
-
-  // Subscribe to live Firebase Auth state changes
-  useEffect(() => {
-    const unsubscribe = subscribeToAuthChanges((fbUser) => {
-      if (fbUser) {
-        setCurrentUser(fbUser);
-        if (fbUser.role) {
-          setRole(fbUser.role);
-        }
-      }
-    });
-    return () => unsubscribe();
-  }, []);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.ORGANIZER, JSON.stringify(organizer));
@@ -272,114 +362,179 @@ export default function App() {
   }, [tickets]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.WRISTBANDS, JSON.stringify(wristbands));
-  }, [wristbands]);
-
-  useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.TABLES, JSON.stringify(tables));
   }, [tables]);
 
   const activeEvent = events.find((e) => e.id === activeEventId) || events[0];
   const activeStaff = staff.find((s) => s.id === activeStaffId) || staff[0];
 
-  // Actions
+  // Get tickets owned by current user (or show active event tickets if demo user has none yet)
+  const matchedUserTickets = getUserPurchasedTickets(tickets, currentUser);
+  const userWalletTickets =
+    matchedUserTickets.length > 0
+      ? matchedUserTickets
+      : tickets.filter((t) => t.status !== 'cancelled');
+
   const handleToggleTheme = () => {
     setTheme((prev) => (prev === 'dark' ? 'light' : prev === 'light' ? 'bw' : 'dark'));
   };
 
   const handleResetData = () => {
-    if (window.confirm('¿Deseas restablecer todos los datos a la versión inicial de Bush Brothers Producciones?')) {
-      localStorage.clear();
-      setRole('admin');
-      setTheme('dark');
-      setCurrentUser(INITIAL_USER);
-      setAdminTab('tickets');
-      setOrganizer(INITIAL_ORGANIZER);
-      setShowAccessScreen(false);
-      setEvents(INITIAL_EVENTS);
-      setActiveEventId(INITIAL_EVENTS[0].id);
-      setStaff(INITIAL_STAFF);
-      setActiveStaffId(INITIAL_STAFF[0].id);
-      setTickets(INITIAL_TICKETS);
-      setWristbands(INITIAL_WRISTBANDS);
-      setTables(INITIAL_TABLES);
-    }
+    localStorage.clear();
+    setRole('admin');
+    setTheme('dark');
+    setCurrentUser({ ...INITIAL_USER, isRegistered: true });
+    setAdminTab('tickets');
+    setOrganizer(INITIAL_ORGANIZER);
+    setShowAccessScreen(false);
+    setEvents(INITIAL_EVENTS);
+    setActiveEventId(INITIAL_EVENTS[0].id);
+    setStaff(INITIAL_STAFF);
+    setActiveStaffId(INITIAL_STAFF[0].id);
+    setTickets(INITIAL_TICKETS);
+    setTables(INITIAL_TABLES);
   };
 
   const handleUpdateHeroImage = (imageUrl: string) => {
     setEvents((prev) =>
-      prev.map((e) => (e.id === activeEvent.id ? { ...e, heroImage: imageUrl } : e))
+      prev.map((e) => {
+        if (e.id === activeEvent.id) {
+          const updated = { ...e, heroImage: imageUrl };
+          saveEventToCloud(updated);
+          return updated;
+        }
+        return e;
+      })
     );
+    setDynamicIslandNotification({
+      title: 'Portada Actualizada en Vivo',
+      subtitle: activeEvent.title,
+      type: 'info',
+    });
   };
 
   const handleUpdateVideoUrl = (videoUrl: string) => {
     setEvents((prev) =>
-      prev.map((e) => (e.id === activeEvent.id ? { ...e, videoStoryUrl: videoUrl } : e))
-    );
-  };
-
-  const handleSaveWristband = (verification: WristbandVerification) => {
-    setWristbands((prev) => [verification, ...prev]);
-    saveWristbandToCloud(activeEvent.id, verification);
-    setDynamicIslandNotification({
-      title: 'Brazalete Verificado',
-      subtitle: `${verification.guestName || 'Invitado'} · ${verification.folio}`,
-      type: 'wristband',
-    });
-    setStaff((prev) =>
-      prev.map((s) =>
-        s.id === verification.validatedBy.collabId
-          ? { ...s, checkinsCount: s.checkinsCount + 1, lastActive: 'Justo ahora' }
-          : s
-      )
-    );
-  };
-
-  // Register client and issued ticket from wristband capture test
-  const handleRegisterClientAndTicket = (newTicket: Ticket) => {
-    setTickets((prev) => [newTicket, ...prev]);
-    saveTicketToCloud(activeEvent.id, newTicket);
-    setDynamicIslandNotification({
-      title: 'Nuevo Cliente Registrado',
-      subtitle: `${newTicket.guestName} · Folio ${newTicket.folio}`,
-      type: 'wristband',
-    });
-  };
-
-  const handleIssueTicket = (newTicket: Ticket) => {
-    setTickets((prev) => [newTicket, ...prev]);
-    saveTicketToCloud(activeEvent.id, newTicket);
-    setDynamicIslandNotification({
-      title: 'Boleto Emitido',
-      subtitle: `${newTicket.guestName} · ${newTicket.tier.toUpperCase()}`,
-      type: 'ticket',
-    });
-  };
-
-  const handleCheckInTicket = (ticketId: string) => {
-    const nowStr = new Date().toLocaleTimeString('es-MX', {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-    setTickets((prev) =>
-      prev.map((t) => (t.id === ticketId ? { ...t, status: 'used', usedAt: nowStr } : t))
+      prev.map((e) => {
+        if (e.id === activeEvent.id) {
+          const updated = { ...e, videoStoryUrl: videoUrl };
+          saveEventToCloud(updated);
+          return updated;
+        }
+        return e;
+      })
     );
     setDynamicIslandNotification({
-      title: 'Acceso Validado',
-      subtitle: `Ticket #${ticketId.slice(0, 8)}`,
-      type: 'ticket',
+      title: 'Video 9:16 Cargado',
+      subtitle: 'Disponible en Historia del Evento',
+      type: 'info',
     });
+  };
+
+  const handleIssueTickets = (newTickets: Ticket[]) => {
+    setTickets((prev) => [...newTickets, ...prev]);
+    for (const tkt of newTickets) {
+      saveTicketToCloud(activeEvent.id, tkt);
+    }
+    const first = newTickets[0];
+    if (first) {
+      setDynamicIslandNotification({
+        title:
+          newTickets.length > 1
+            ? `${newTickets.length} QRs Individuales Emitidos`
+            : 'QR Individual Emitido',
+        subtitle: `${first.guestName} · ${first.folio}`,
+        type: 'ticket',
+      });
+    }
+  };
+
+  const handleValidateTicketQr = (rawCode: string) => {
+    const result = validateAndProcessTicketScan(
+      rawCode,
+      tickets,
+      activeEvent.id,
+      activeStaff
+    );
+
+    if (result.success && result.updatedTicket) {
+      const updated = result.updatedTicket;
+      setTickets((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+      saveTicketToCloud(activeEvent.id, updated);
+
+      setStaff((prev) =>
+        prev.map((s) => {
+          if (s.id === activeStaff.id) {
+            const nextCollab = {
+              ...s,
+              checkinsCount: s.checkinsCount + 1,
+              lastActive: 'Justo ahora',
+            };
+            saveCollaboratorToCloud(nextCollab);
+            return nextCollab;
+          }
+          return s;
+        })
+      );
+
+      setDynamicIslandNotification({
+        title: 'QR Validado en Puerta',
+        subtitle: `${updated.guestName} · ${updated.folio}`,
+        type: 'ticket',
+      });
+    }
+
+    return result;
+  };
+
+  const handleCheckInTicketById = (ticketId: string) => {
+    const found = tickets.find((t) => t.id === ticketId);
+    if (!found) return;
+    handleValidateTicketQr(found.qrPayload || found.folio);
   };
 
   const handleCancelTicket = (ticketId: string) => {
     setTickets((prev) =>
-      prev.map((t) => (t.id === ticketId ? { ...t, status: 'cancelled' } : t))
+      prev.map((t) => {
+        if (t.id === ticketId) {
+          const updated: Ticket = { ...t, status: 'cancelled' };
+          saveTicketToCloud(activeEvent.id, updated);
+          return updated;
+        }
+        return t;
+      })
     );
   };
 
   const handleAddCollaborator = (newCollab: Collaborator) => {
     setStaff((prev) => [newCollab, ...prev]);
     setActiveStaffId(newCollab.id);
+    saveCollaboratorToCloud(newCollab);
+    setDynamicIslandNotification({
+      title: 'Colaborador Autorizado',
+      subtitle: `${newCollab.name} (${newCollab.assignedGate})`,
+      type: 'info',
+    });
+  };
+
+  const handleToggleCollaboratorStatus = (collabId: string) => {
+    setStaff((prev) =>
+      prev.map((c) => {
+        if (c.id === collabId) {
+          const nextStatus: 'active' | 'inactive' =
+            c.status === 'active' ? 'inactive' : 'active';
+          const updated = { ...c, status: nextStatus };
+          saveCollaboratorToCloud(updated);
+          return updated;
+        }
+        return c;
+      })
+    );
+  };
+
+  const handleRemoveCollaborator = (collabId: string) => {
+    setStaff((prev) => prev.filter((c) => c.id !== collabId));
+    deleteCollaboratorFromCloud(collabId);
   };
 
   const handleSaveEvent = (updated: EventItem) => {
@@ -390,6 +545,12 @@ export default function App() {
       setEvents((prev) => [updated, ...prev]);
       setActiveEventId(updated.id);
     }
+    saveEventToCloud(updated);
+    setDynamicIslandNotification({
+      title: exists ? 'Evento Actualizado en Vivo' : 'Nuevo Evento Publicado',
+      subtitle: updated.title,
+      type: 'info',
+    });
   };
 
   const handleSaveOrganizer = (updatedOrganizer: OrganizerProfile) => {
@@ -408,63 +569,28 @@ export default function App() {
     );
   };
 
-  const handleValidateTicketManual = (code: string) => {
-    const clean = code.trim().toUpperCase();
-    const found = tickets.find((t) => t.folio.toUpperCase() === clean);
-    if (!found) {
-      return { success: false, message: `El código "${clean}" no fue encontrado.` };
-    }
-    if (found.status === 'used') {
-      return { success: false, message: `Boleto ya utilizado previamente.`, ticket: found };
-    }
-    if (found.status === 'cancelled') {
-      return { success: false, message: `Boleto cancelado en sistema.`, ticket: found };
-    }
-    handleCheckInTicket(found.id);
-    return {
-      success: true,
-      message: `¡Acceso Válido! Boleto registrado correctamente.`,
-      ticket: found,
-    };
-  };
-
-  // Render minimal logo-only loading screen
   if (isLoadingScreen) {
     return (
-      <div className={`theme-${theme} min-h-screen`}>
-        <IPhoneShell
-          activeEventTitle={activeEvent.title}
-          dynamicIslandNotification={dynamicIslandNotification}
-          onClearNotification={() => setDynamicIslandNotification(null)}
-          onOpenStoryVideo={() => setShowStoryModal(true)}
-          onOpenWristbandTest={() => setShowWristbandCaptureModal(true)}
-        >
-          <LogoLoadingScreen />
-        </IPhoneShell>
+      <div className={`theme-${theme} min-h-[100dvh] w-full overflow-hidden`}>
+        <LogoLoadingScreen />
       </div>
     );
   }
 
-  // Render full-page Access Landing Screen if open
   if (showAccessScreen) {
     return (
-      <div className={`theme-${theme} min-h-screen`}>
-        <IPhoneShell
-          activeEventTitle={activeEvent.title}
-          dynamicIslandNotification={dynamicIslandNotification}
-          onClearNotification={() => setDynamicIslandNotification(null)}
-          onOpenStoryVideo={() => setShowStoryModal(true)}
-          onOpenWristbandTest={() => setShowWristbandCaptureModal(true)}
-        >
-          <AccessScreen
-            organizer={organizer}
-            theme={theme}
-            onToggleTheme={handleToggleTheme}
-            onSelectPortal={handleEnterPortal}
-            onOpenEditProfile={() => setShowEditProfileModal(true)}
-            onOpenAuthSession={() => setShowAuthModal(true)}
-          />
-        </IPhoneShell>
+      <div className={`theme-${theme} @container min-h-[100dvh] w-full overflow-x-hidden`}>
+        <AccessScreen
+          organizer={organizer}
+          currentUser={currentUser}
+          collaborators={staff}
+          theme={theme}
+          onToggleTheme={handleToggleTheme}
+          onSelectPortal={handleEnterPortal}
+          onCompleteRegistration={handleCompleteRegistration}
+          onOpenEditProfile={() => setShowEditProfileModal(true)}
+          onOpenAuthSession={() => setShowAuthModal(true)}
+        />
         <OrganizerProfileModal
           isOpen={showEditProfileModal}
           onClose={() => setShowEditProfileModal(false)}
@@ -484,42 +610,49 @@ export default function App() {
   }
 
   return (
-    <div className={`theme-${theme} antialiased min-h-screen flex flex-col selection:bg-white selection:text-black transition-colors duration-200`}>
-      <IPhoneShell
-        activeEventTitle={activeEvent.title}
-        dynamicIslandNotification={dynamicIslandNotification}
-        onClearNotification={() => setDynamicIslandNotification(null)}
-        onOpenStoryVideo={() => setShowStoryModal(true)}
-        onOpenWristbandTest={() => setShowWristbandCaptureModal(true)}
-      >
-        {/* Top App Header */}
-        <Header
-          currentRole={role}
-          onSelectRole={setRole}
-          collaborators={staff}
-          activeStaffId={activeStaffId}
-          onSelectStaff={setActiveStaffId}
-          onResetData={handleResetData}
-          organizer={organizer}
-          currentUser={currentUser}
-          theme={theme}
-          onToggleTheme={handleToggleTheme}
-          onOpenAccessScreen={() => setShowAccessScreen(true)}
-          onOpenEditProfile={() => setShowEditProfileModal(true)}
-          onOpenAuthModal={() => setShowAuthModal(true)}
-        />
+    <div
+      className={`theme-${theme} @container antialiased min-h-[100dvh] w-full overflow-x-hidden bg-grid flex flex-col justify-between selection:bg-white selection:text-black transition-colors duration-200`}
+    >
+      {/* Floating Live Toast Notification (Responsive for all smartphones) */}
+      {dynamicIslandNotification && (
+        <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-1.5rem)] max-w-md pointer-events-auto animate-in fade-in">
+          <div className="liquid-blur rounded-2xl px-4 py-3 border border-emerald-400/35 shadow-2xl flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <div className="min-w-0">
+                <div className="text-xs font-bold text-white truncate">
+                  {dynamicIslandNotification.title}
+                </div>
+                <div className="text-[11px] text-neutral-300 truncate">
+                  {dynamicIslandNotification.subtitle}
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDynamicIslandNotification(null)}
+              className="w-6 h-6 rounded-full bg-white/10 hover:bg-white/20 text-neutral-300 flex items-center justify-center shrink-0 cursor-pointer"
+              aria-label="Cerrar notificación"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
-      {/* Main Content Area */}
-      <main className="max-w-6xl mx-auto w-full px-3 md:px-6 pt-4 pb-28 md:pb-24 flex-1 space-y-6">
+      {/* Main Content Area — Adaptive across all smartphone & tablet/desktop viewports */}
+      <main className="max-w-5xl mx-auto w-full px-3 sm:px-5 md:px-6 pt-3 sm:pt-5 pb-28 sm:pb-24 flex-1 space-y-5 sm:space-y-6">
         {/* VIEW 1: ADMIN (CREADOR DEL EVENTO / BUSH BROTHERS) */}
         {role === 'admin' && (
-          <div className="space-y-6">
-            {/* Hero 9:16 responsive banner */}
+          <div className="space-y-5 sm:space-y-6">
             <Hero916Banner
               event={activeEvent}
               organizerName={organizer.name}
               onOpenStoryVideo={() => setShowStoryModal(true)}
-              onOpenEditModal={() => setShowEditEventModal(true)}
+              onOpenEditModal={() => {
+                setIsCreatingNewEvent(false);
+                setShowEditEventModal(true);
+              }}
               onOpenNewTicketModal={() => setShowNewTicketModal(true)}
               onOpenEditProfile={() => setShowEditProfileModal(true)}
               onSelectTab={(tab) => setAdminTab(tab)}
@@ -528,65 +661,58 @@ export default function App() {
               isAdmin={true}
             />
 
-            {/* Admin Dashboard */}
             <AdminDashboard
               event={activeEvent}
               allEvents={events}
               tickets={tickets}
               collaborators={staff}
-              wristbands={wristbands}
               tables={tables}
               activeTab={adminTab}
               onChangeTab={setAdminTab}
               onOpenNewTicketModal={() => setShowNewTicketModal(true)}
               onOpenNewCollabModal={() => setShowNewCollabModal(true)}
-              onOpenCaptureModal={() => setShowWristbandCaptureModal(true)}
+              onOpenScannerModal={() => setShowScannerModal(true)}
+              onOpenEditEventModal={() => {
+                setIsCreatingNewEvent(false);
+                setShowEditEventModal(true);
+              }}
+              onOpenCreateEventModal={() => {
+                setIsCreatingNewEvent(true);
+                setShowEditEventModal(true);
+              }}
               onSelectEvent={setActiveEventId}
-              onCheckInTicket={handleCheckInTicket}
+              onCheckInTicket={handleCheckInTicketById}
               onCancelTicket={handleCancelTicket}
+              onToggleCollaboratorStatus={handleToggleCollaboratorStatus}
+              onRemoveCollaborator={handleRemoveCollaborator}
             />
           </div>
         )}
 
-        {/* VIEW 2: COLLABORATOR (STAFF ENTRADA / PORTERO) */}
+        {/* VIEW 2: COLLABORATOR (SOLO ESCANEO DE QRs VENDIDOS EN TIEMPO REAL) */}
         {role === 'collab' && (
-          <div className="space-y-6">
-            <Hero916Banner
-              event={activeEvent}
-              organizerName={organizer.name}
-              onOpenStoryVideo={() => setShowStoryModal(true)}
-              onOpenEditModal={() => setShowEditEventModal(true)}
-              onOpenNewTicketModal={() => setShowNewTicketModal(true)}
-              onOpenEditProfile={() => setShowEditProfileModal(true)}
-              onSelectTab={(tab) => {
-                setRole('admin');
-                setAdminTab(tab);
-              }}
-              onUpdateHeroImage={handleUpdateHeroImage}
-              onUpdateVideoUrl={handleUpdateVideoUrl}
-              isAdmin={false}
-            />
-
+          <div className="space-y-5 sm:space-y-6">
             <CollabPortal
               activeStaff={activeStaff}
+              allStaff={staff}
+              onSelectStaff={setActiveStaffId}
               event={activeEvent}
-              wristbands={wristbands}
               tickets={tickets}
-              onOpenWristbandCapture={() => setShowWristbandCaptureModal(true)}
               onOpenTicketScanner={() => setShowScannerModal(true)}
-              onValidateTicketManual={handleValidateTicketManual}
+              onValidateTicketQr={handleValidateTicketQr}
               onOpenAuthSession={() => setShowAuthModal(true)}
             />
           </div>
         )}
 
-        {/* VIEW 3: ATTENDEE / USER (EXPLORADOR & PERFIL) */}
+        {/* VIEW 3: ATTENDEE / USER (CARTELERA DE CREADORES & MI PERFIL QR INDIVIDUAL) */}
         {role === 'user' && (
-          <div className="space-y-6">
+          <div className="space-y-5 sm:space-y-6">
             <AttendeePortal
               events={events}
               activeEvent={activeEvent}
-              userTickets={tickets}
+              currentUser={currentUser}
+              userTickets={userWalletTickets}
               onOpenStoryVideo={() => setShowStoryModal(true)}
               onSelectEvent={setActiveEventId}
               onBuyTicket={(evt) => {
@@ -598,23 +724,28 @@ export default function App() {
                 setRole('admin');
                 setAdminTab('location');
               }}
+              onOpenAuthProfile={() => setShowAuthModal(true)}
             />
           </div>
         )}
       </main>
 
-      {/* FLOATING LIQUID GLASS ACTION DOCK */}
+      {/* UNIFIED FLOATING BOTTOM BAR */}
       <FloatingDock
         currentRole={role}
         onSelectRole={setRole}
         theme={theme}
         onToggleTheme={handleToggleTheme}
         currentUser={currentUser}
+        organizer={organizer}
+        collaborators={staff}
+        activeStaffId={activeStaffId}
         onOpenAuthSession={() => setShowAuthModal(true)}
-        onOpenWristbandTest={() => setShowWristbandCaptureModal(true)}
+        onOpenScannerModal={() => setShowScannerModal(true)}
         onOpenStoryVideo={() => setShowStoryModal(true)}
+        onOpenAccessScreen={() => setShowAccessScreen(true)}
+        onResetData={handleResetData}
       />
-      </IPhoneShell>
 
       {/* MODALS */}
       <AuthSessionModal
@@ -643,30 +774,20 @@ export default function App() {
         }}
       />
 
-      <WristbandCaptureModal
-        isOpen={showWristbandCaptureModal}
-        onClose={() => setShowWristbandCaptureModal(false)}
-        activeStaff={activeStaff}
-        event={activeEvent}
-        existingWristbands={wristbands}
-        onSaveWristband={handleSaveWristband}
-        onRegisterClientTicket={handleRegisterClientAndTicket}
-        onOpenAuthSession={() => setShowAuthModal(true)}
-      />
-
       <TicketScannerModal
         isOpen={showScannerModal}
         onClose={() => setShowScannerModal(false)}
         tickets={tickets}
-        wristbands={wristbands}
-        onCheckInTicket={handleCheckInTicket}
+        activeEventId={activeEvent.id}
+        onValidateTicketQr={handleValidateTicketQr}
       />
 
       <NewTicketModal
         isOpen={showNewTicketModal}
         onClose={() => setShowNewTicketModal(false)}
         event={activeEvent}
-        onIssueTicket={handleIssueTicket}
+        currentUser={currentUser}
+        onIssueTickets={handleIssueTickets}
         isAdmin={role === 'admin'}
       />
 
@@ -675,6 +796,7 @@ export default function App() {
         onClose={() => setShowEditEventModal(false)}
         event={activeEvent}
         onSaveEvent={handleSaveEvent}
+        isCreatingNew={isCreatingNewEvent}
       />
 
       <NewCollabModal

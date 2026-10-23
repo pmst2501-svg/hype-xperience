@@ -2,6 +2,14 @@ export type UserRole = 'admin' | 'collab' | 'user';
 
 export type ThemeMode = 'dark' | 'light' | 'bw';
 
+export type AdminTab =
+  | 'tickets'
+  | 'qrscans'
+  | 'collaborators'
+  | 'tables'
+  | 'location'
+  | 'calendar';
+
 export interface UserProfile {
   uid: string;
   displayName: string;
@@ -12,6 +20,7 @@ export interface UserProfile {
   bio?: string;
   company?: string;
   provider: 'google' | 'phone' | 'email' | 'demo';
+  isRegistered?: boolean;
   createdAt?: string;
 }
 
@@ -74,12 +83,15 @@ export interface Ticket {
   guestName: string;
   guestEmail: string;
   guestPhone?: string;
+  buyerUid?: string;
   tier: TicketTier;
   price: number;
   status: TicketStatus;
   issuedAt: string;
   usedAt?: string;
-  assignedWristbandFolio?: string;
+  checkedInByCollabId?: string;
+  checkedInByName?: string;
+  checkedInGate?: string;
   qrPayload: string;
   seatInfo?: string;
 }
@@ -96,37 +108,7 @@ export interface Collaborator {
   assignedGate: string;
   avatar: string;
   lastActive: string;
-}
-
-export type WristbandStatus = 'approved' | 'suspicious' | 'duplicate_flagged';
-
-export interface WristbandVerification {
-  id: string;
-  eventId: string;
-  folio: string;
-  guestName?: string;
-  guestEmail?: string;
-  guestPhone?: string;
-  photoUrl: string;
-  photoHash: string;
-  timestamp: string;
-  formattedDateTime: string;
-  location: {
-    latitude: number;
-    longitude: number;
-    venueName: string;
-    accuracyMeters?: number;
-  };
-  validatedBy: {
-    collabId: string;
-    collabName: string;
-    roleTitle: string;
-  };
-  qrData: string;
-  status: WristbandStatus;
-  flaggedReason?: string;
-  accessGate: string;
-  ticketTier?: TicketTier;
+  eventId?: string;
 }
 
 export interface VipTable {

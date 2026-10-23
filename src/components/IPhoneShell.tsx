@@ -2,17 +2,12 @@ import React, { useState, useEffect } from 'react';
 import {
   Wifi,
   Battery,
-  Sparkles,
   Play,
-  Volume2,
-  ChevronDown,
   Smartphone,
   Maximize2,
   Minimize2,
-  Radio,
-  CheckCircle2,
   Music,
-  Zap,
+  QrCode,
 } from 'lucide-react';
 
 export type IPhoneColor = 'natural' | 'black' | 'white' | 'desert';
@@ -25,20 +20,20 @@ interface IPhoneShellProps {
     title: string;
     subtitle: string;
     icon?: string;
-    type?: 'wristband' | 'ticket' | 'music' | 'info';
+    type?: 'ticket' | 'music' | 'info';
   } | null;
   onClearNotification?: () => void;
   onOpenStoryVideo?: () => void;
-  onOpenWristbandTest?: () => void;
+  onOpenScannerModal?: () => void;
 }
 
 export const IPhoneShell: React.FC<IPhoneShellProps> = ({
   children,
-  activeEventTitle = 'Bush Brothers Fest 2026',
+  activeEventTitle = 'Oleaje Beach Club Acapulco',
   dynamicIslandNotification,
   onClearNotification,
   onOpenStoryVideo,
-  onOpenWristbandTest,
+  onOpenScannerModal,
 }) => {
   const [viewMode, setViewMode] = useState<IPhoneViewMode>(() => {
     return (localStorage.getItem('hype_ticket_iphone_view_mode') as IPhoneViewMode) || 'frame';
@@ -52,7 +47,6 @@ export const IPhoneShell: React.FC<IPhoneShellProps> = ({
   const [isDynamicIslandExpanded, setIsDynamicIslandExpanded] = useState<boolean>(false);
   const [batteryLevel] = useState<number>(88);
 
-  // Update clock every minute
   useEffect(() => {
     const updateTime = () => {
       const now = new Date();
@@ -65,7 +59,6 @@ export const IPhoneShell: React.FC<IPhoneShellProps> = ({
     return () => clearInterval(timer);
   }, []);
 
-  // Auto-expand Dynamic Island on new notification
   useEffect(() => {
     if (dynamicIslandNotification) {
       setIsDynamicIslandExpanded(true);
@@ -87,7 +80,6 @@ export const IPhoneShell: React.FC<IPhoneShellProps> = ({
     localStorage.setItem('hype_ticket_iphone_color', color);
   };
 
-  // Color styles for iPhone 16 Pro Titanium bezel
   const chassisConfig = {
     natural: {
       name: 'Titanio Natural',
@@ -129,23 +121,20 @@ export const IPhoneShell: React.FC<IPhoneShellProps> = ({
 
   return (
     <div className="min-h-screen flex flex-col bg-[#06070a] text-white">
-      {/* Top Bar: iPhone Controller Switcher (Fixed or sticky for convenience) */}
       <div className="sticky top-0 z-50 bg-[#0d0e14]/90 backdrop-blur-xl border-b border-white/10 px-3 py-2 flex items-center justify-between text-xs">
         <div className="flex items-center gap-2">
           <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-neutral-800 to-neutral-600 flex items-center justify-center font-bold text-white text-xs border border-white/20 shadow">
             
           </div>
           <span className="font-semibold text-white tracking-wide flex items-center gap-1.5">
-            <span>iPhone 16 Pro Replica</span>
+            <span>Hype Ticket · Oleaje Acapulco</span>
             <span className="hidden sm:inline-block px-1.5 py-0.5 rounded text-[10px] bg-white/10 text-neutral-300 font-mono">
-              iOS 18
+              QR Live
             </span>
           </span>
         </div>
 
-        {/* View Mode & Finish controls */}
         <div className="flex items-center gap-2">
-          {/* Chassis finish picker (visible only in frame mode) */}
           {viewMode === 'frame' && (
             <div className="hidden md:flex items-center gap-1 bg-white/5 rounded-full p-1 border border-white/10">
               {(['natural', 'black', 'white', 'desert'] as IPhoneColor[]).map((c) => (
@@ -162,21 +151,11 @@ export const IPhoneShell: React.FC<IPhoneShellProps> = ({
                       ? 'bg-[#e4e4ea]'
                       : 'bg-[#856b56]'
                   } ${chassisColor === c ? 'scale-125 ring-2 ring-white' : 'opacity-70 hover:opacity-100'}`}
-                  title={
-                    c === 'natural'
-                      ? 'Titanio Natural'
-                      : c === 'black'
-                      ? 'Titanio Negro'
-                      : c === 'white'
-                      ? 'Titanio Blanco'
-                      : 'Titanio Desierto'
-                  }
                 />
               ))}
             </div>
           )}
 
-          {/* Mode segmented control */}
           <div className="flex items-center gap-0.5 bg-black/40 rounded-lg p-0.5 border border-white/10">
             <button
               type="button"
@@ -186,7 +165,6 @@ export const IPhoneShell: React.FC<IPhoneShellProps> = ({
                   ? 'bg-white text-black font-bold shadow'
                   : 'text-neutral-400 hover:text-white'
               }`}
-              title="Marco completo iPhone 16 Pro con botones físicos"
             >
               <Smartphone className="w-3 h-3" />
               <span className="hidden sm:inline">Marco iPhone</span>
@@ -199,7 +177,6 @@ export const IPhoneShell: React.FC<IPhoneShellProps> = ({
                   ? 'bg-white text-black font-bold shadow'
                   : 'text-neutral-400 hover:text-white'
               }`}
-              title="Formato móvil adaptable vertical"
             >
               <Minimize2 className="w-3 h-3" />
               <span className="hidden sm:inline">Móvil Fluido</span>
@@ -212,7 +189,6 @@ export const IPhoneShell: React.FC<IPhoneShellProps> = ({
                   ? 'bg-white text-black font-bold shadow'
                   : 'text-neutral-400 hover:text-white'
               }`}
-              title="Pantalla completa expandida con status bar iOS"
             >
               <Maximize2 className="w-3 h-3" />
               <span className="hidden sm:inline">Expandido</span>
@@ -221,7 +197,6 @@ export const IPhoneShell: React.FC<IPhoneShellProps> = ({
         </div>
       </div>
 
-      {/* Main Container */}
       <div
         className={`flex-1 flex items-center justify-center p-0 ${
           viewMode === 'frame'
@@ -231,7 +206,6 @@ export const IPhoneShell: React.FC<IPhoneShellProps> = ({
             : 'w-full'
         }`}
       >
-        {/* Real iPhone 16 Pro Chassis Wrapper */}
         <div
           className={`relative transition-all duration-300 ${
             viewMode === 'frame'
@@ -241,39 +215,26 @@ export const IPhoneShell: React.FC<IPhoneShellProps> = ({
               : 'w-full max-w-full'
           }`}
         >
-          {/* Hardware Physical Buttons (Only rendered in 'frame' mode) */}
           {viewMode === 'frame' && (
             <>
-              {/* Left Side: Action Button */}
               <div
-                onClick={onOpenWristbandTest}
-                title="Botón de Acción: Prueba Rápida Brazalete"
+                onClick={onOpenScannerModal}
+                title="Botón de Acción: Escáner QR en Tiempo Real"
                 className={`absolute -left-[5px] top-[115px] w-[5px] h-[28px] ${chassisConfig.buttonBg} rounded-l-md cursor-pointer hover:w-[6px] transition-all`}
               />
-              {/* Left Side: Volume Up */}
               <div
                 className={`absolute -left-[5px] top-[160px] w-[5px] h-[50px] ${chassisConfig.buttonBg} rounded-l-md`}
               />
-              {/* Left Side: Volume Down */}
               <div
                 className={`absolute -left-[5px] top-[222px] w-[5px] h-[50px] ${chassisConfig.buttonBg} rounded-l-md`}
               />
-              {/* Right Side: Power / Lock Button */}
               <div
                 onClick={() => setIsDynamicIslandExpanded(!isDynamicIslandExpanded)}
-                title="Botón Lateral: Activar Dynamic Island"
                 className={`absolute -right-[5px] top-[180px] w-[5px] h-[75px] ${chassisConfig.buttonBg} rounded-r-md cursor-pointer hover:w-[6px] transition-all`}
               />
-
-              {/* Antenna bands */}
-              <div className="absolute top-[80px] -left-[2px] w-[2px] h-[6px] bg-black/60" />
-              <div className="absolute top-[80px] -right-[2px] w-[2px] h-[6px] bg-black/60" />
-              <div className="absolute bottom-[80px] -left-[2px] w-[2px] h-[6px] bg-black/60" />
-              <div className="absolute bottom-[80px] -right-[2px] w-[2px] h-[6px] bg-black/60" />
             </>
           )}
 
-          {/* iPhone Screen Container (Bezel inner border) */}
           <div
             className={`relative w-full overflow-hidden bg-[#050508] text-white flex flex-col ${
               viewMode === 'frame'
@@ -283,9 +244,7 @@ export const IPhoneShell: React.FC<IPhoneShellProps> = ({
                 : 'min-h-screen'
             }`}
           >
-            {/* iOS Status Bar (Always present to give genuine iPhone vibe) */}
             <div className="sticky top-0 z-40 bg-black/90 backdrop-blur-md px-5 pt-3 pb-2 flex items-center justify-between select-none relative">
-              {/* Time */}
               <div
                 className={`w-14 text-left transition-opacity duration-200 ${
                   isDynamicIslandExpanded ? 'opacity-0 pointer-events-none' : 'opacity-100'
@@ -296,7 +255,6 @@ export const IPhoneShell: React.FC<IPhoneShellProps> = ({
                 </span>
               </div>
 
-              {/* Dynamic Island Container */}
               <div className="flex-1 flex justify-center">
                 <div
                   onClick={() => setIsDynamicIslandExpanded(!isDynamicIslandExpanded)}
@@ -305,25 +263,20 @@ export const IPhoneShell: React.FC<IPhoneShellProps> = ({
                       ? 'w-[94%] max-w-[360px] h-[82px] rounded-[32px] p-3 -mt-1'
                       : 'w-[126px] h-[30px] px-2.5'
                   }`}
-                  title="Toca para interactuar con la Dynamic Island"
                 >
                   {!isDynamicIslandExpanded ? (
-                    /* Compact Pill View */
                     <>
-                      {/* Left side: Sensor/Activity */}
                       <div className="flex items-center gap-1.5">
                         <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                         <span className="text-[10px] font-medium tracking-tight text-neutral-300 max-w-[50px] truncate">
-                          Live
+                          QR Live
                         </span>
                       </div>
 
-                      {/* True iPhone Camera / FaceID lens */}
                       <div className="flex items-center gap-1.5">
                         <div className="w-2.5 h-2.5 rounded-full bg-[#111116] border border-[#22222a] flex items-center justify-center">
                           <div className="w-1 h-1 rounded-full bg-[#1e2338]" />
                         </div>
-                        {/* Audio waveform */}
                         <div className="flex items-center gap-0.5 h-2.5">
                           <span className="w-0.5 h-1.5 bg-emerald-400 rounded-full animate-bounce" />
                           <span className="w-0.5 h-2.5 bg-emerald-400 rounded-full animate-bounce [animation-delay:0.15s]" />
@@ -332,7 +285,6 @@ export const IPhoneShell: React.FC<IPhoneShellProps> = ({
                       </div>
                     </>
                   ) : (
-                    /* Expanded Live Activity Card */
                     <div className="w-full flex items-center justify-between gap-3 animate-fadeIn">
                       <div className="flex items-center gap-2.5 min-w-0">
                         <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 to-emerald-500 flex items-center justify-center shadow-md flex-shrink-0">
@@ -340,16 +292,19 @@ export const IPhoneShell: React.FC<IPhoneShellProps> = ({
                         </div>
                         <div className="text-left min-w-0">
                           <div className="text-xs font-bold text-white flex items-center gap-1 truncate">
-                            <span className="truncate">{activeEventTitle}</span>
+                            <span className="truncate">
+                              {dynamicIslandNotification?.title || activeEventTitle}
+                            </span>
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
                           </div>
                           <div className="text-[10px] text-neutral-400 flex items-center gap-1.5 truncate">
-                            <span className="truncate">Bush Brothers • En Vivo</span>
+                            <span className="truncate">
+                              {dynamicIslandNotification?.subtitle || 'Oleaje Beach Club • Acapulco'}
+                            </span>
                           </div>
                         </div>
                       </div>
 
-                      {/* Quick action buttons in Dynamic Island */}
                       <div className="flex items-center gap-1.5 flex-shrink-0">
                         {onOpenStoryVideo && (
                           <button
@@ -364,17 +319,17 @@ export const IPhoneShell: React.FC<IPhoneShellProps> = ({
                             <Play className="w-3.5 h-3.5 fill-current" />
                           </button>
                         )}
-                        {onOpenWristbandTest && (
+                        {onOpenScannerModal && (
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              onOpenWristbandTest();
+                              onOpenScannerModal();
                             }}
                             className="p-1.5 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 transition cursor-pointer"
-                            title="Probar Brazalete"
+                            title="Abrir Escáner QR"
                           >
-                            <Zap className="w-3.5 h-3.5" />
+                            <QrCode className="w-3.5 h-3.5" />
                           </button>
                         )}
                       </div>
@@ -383,7 +338,6 @@ export const IPhoneShell: React.FC<IPhoneShellProps> = ({
                 </div>
               </div>
 
-              {/* Status Icons: 5G, Wi-Fi, Battery */}
               <div
                 className={`w-14 flex items-center justify-end gap-1.5 text-neutral-200 transition-opacity duration-200 ${
                   isDynamicIslandExpanded ? 'opacity-0 pointer-events-none' : 'opacity-100'
@@ -403,23 +357,20 @@ export const IPhoneShell: React.FC<IPhoneShellProps> = ({
               </div>
             </div>
 
-            {/* Scrollable Screen Content (The actual web app viewport) */}
             <div
-              className={`flex-1 overflow-y-auto overflow-x-hidden ${
+              className={`@container flex-1 overflow-y-auto overflow-x-hidden ${
                 viewMode === 'frame' ? 'pb-8' : 'pb-6'
               }`}
             >
               {children}
             </div>
 
-            {/* iOS Bottom Safe Area & Home Indicator Bar */}
             <div className="sticky bottom-0 z-40 bg-black/60 backdrop-blur-md pt-2 pb-2.5 flex items-center justify-center pointer-events-auto">
               <div
                 onClick={() => {
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
                 className="w-36 h-1.5 bg-white/50 hover:bg-white/80 active:scale-95 transition-all rounded-full cursor-pointer shadow"
-                title="Desliza o toca para volver arriba (Home Indicator iOS)"
               />
             </div>
           </div>

@@ -13,88 +13,94 @@
         "role": { "type": "string", "enum": ["admin", "collab", "user"], "description": "Role in Hype Ticket platform" },
         "bio": { "type": "string", "description": "Brief biography or organization details" },
         "company": { "type": "string", "description": "Producer or organizer company name" },
+        "isRegistered": { "type": "boolean", "description": "Whether the user completed the mandatory registration gate" },
         "createdAt": { "type": "string", "description": "Account registration timestamp" }
       },
       "required": ["uid", "role"]
     },
     "EventItem": {
       "title": "EventItem",
-      "description": "Public and private event records",
+      "description": "Public and private event records created by organizers",
       "type": "object",
       "properties": {
         "id": { "type": "string", "description": "Unique event ID" },
         "title": { "type": "string", "description": "Name of the event" },
-        "code": { "type": "string", "description": "Short code e.g. NYE-2026" },
+        "code": { "type": "string", "description": "Short code e.g. OLEAJE-ACA-26" },
         "category": { "type": "string", "description": "Event category" },
+        "description": { "type": "string", "description": "Detailed event description" },
         "date": { "type": "string", "description": "Event calendar date" },
         "time": { "type": "string", "description": "Event start time" },
-        "venue": { "type": "string", "description": "Venue name" },
+        "formattedDateBadge": { "type": "string", "description": "Formatted date and time badge" },
+        "venue": { "type": "string", "description": "Venue name (e.g. Oleaje Beach Club)" },
+        "address": { "type": "string", "description": "Full street address in Acapulco" },
         "heroImage": { "type": "string", "description": "9:16 vertical cover or landscape banner" },
         "videoStoryUrl": { "type": "string", "description": "9:16 vertical video story URL" },
-        "capacity": { "type": "number", "description": "Total attendee capacity" },
-        "soldCount": { "type": "number", "description": "Total tickets issued" },
+        "totalCapacity": { "type": "number", "description": "Total attendee capacity" },
         "basePrice": { "type": "number", "description": "Base admission ticket price" },
-        "status": { "type": "string", "enum": ["active", "soldout", "draft", "past"], "description": "Status" }
+        "currency": { "type": "string", "description": "Currency code (MXN)" }
       },
       "required": ["id", "title", "date", "venue"]
     },
     "Ticket": {
       "title": "Ticket",
-      "description": "Event admission ticket",
+      "description": "Event admission ticket with individual QR code payload and real-time check-in trace",
       "type": "object",
       "properties": {
         "id": { "type": "string", "description": "Unique ticket ID" },
         "eventId": { "type": "string", "description": "Related event ID" },
         "folio": { "type": "string", "description": "Ticket folio code" },
-        "attendeeName": { "type": "string", "description": "Attendee full name" },
-        "attendeeEmail": { "type": "string", "format": "email", "description": "Attendee email" },
-        "attendeePhone": { "type": "string", "description": "Attendee phone number" },
-        "tier": { "type": "string", "enum": ["general", "vip", "backstage"], "description": "Ticket tier" },
+        "guestName": { "type": "string", "description": "Attendee full name" },
+        "guestEmail": { "type": "string", "format": "email", "description": "Attendee email" },
+        "guestPhone": { "type": "string", "description": "Attendee phone number" },
+        "buyerUid": { "type": "string", "description": "UID of the buyer profile" },
+        "tier": { "type": "string", "enum": ["General", "VIP", "Backstage", "Mesa VIP"], "description": "Ticket tier" },
         "price": { "type": "number", "description": "Price paid" },
         "status": { "type": "string", "enum": ["valid", "used", "cancelled"], "description": "Current status" },
-        "qrPayload": { "type": "string", "description": "QR code verification payload" },
-        "purchaseDate": { "type": "string", "description": "Purchase timestamp" },
-        "usedAt": { "type": "string", "description": "Timestamp when checked in" },
-        "wristbandFolio": { "type": "string", "description": "Linked wristband folio" }
+        "qrPayload": { "type": "string", "description": "Individual encrypted QR code verification payload" },
+        "issuedAt": { "type": "string", "description": "Purchase timestamp" },
+        "usedAt": { "type": "string", "description": "Timestamp when checked in at entrance" },
+        "checkedInByCollabId": { "type": "string", "description": "Collaborator ID who scanned the QR" },
+        "checkedInByName": { "type": "string", "description": "Collaborator name who scanned the QR" },
+        "checkedInGate": { "type": "string", "description": "Entrance gate where QR was scanned" }
       },
-      "required": ["id", "eventId", "folio", "attendeeName", "tier", "status"]
+      "required": ["id", "eventId", "folio", "guestName", "tier", "status", "qrPayload"]
     },
-    "WristbandVerification": {
-      "title": "WristbandVerification",
-      "description": "Physical wristband photo capture and tamper-evident audit record",
+    "Collaborator": {
+      "title": "Collaborator",
+      "description": "Authorized collaborator allowed to scan ticket QR codes in real time",
       "type": "object",
       "properties": {
-        "id": { "type": "string", "description": "Verification audit ID" },
-        "eventId": { "type": "string", "description": "Associated event ID" },
-        "folio": { "type": "string", "description": "Wristband folio" },
-        "guestName": { "type": "string", "description": "Linked guest name" },
-        "photoUrl": { "type": "string", "description": "Captured wristband photo" },
-        "photoHash": { "type": "string", "description": "Cryptographic visual fingerprint of the photo" },
-        "timestamp": { "type": "string", "description": "ISO timestamp of capture" },
-        "formattedDateTime": { "type": "string", "description": "Human readable capture date time" },
-        "qrData": { "type": "string", "description": "QR code content" },
-        "status": { "type": "string", "enum": ["approved", "duplicate_flagged", "invalid"], "description": "Anti-fraud status" },
-        "accessGate": { "type": "string", "description": "Assigned gate" }
+        "id": { "type": "string", "description": "Collaborator ID" },
+        "name": { "type": "string", "description": "Full name" },
+        "roleTitle": { "type": "string", "description": "Assigned role at the venue" },
+        "email": { "type": "string", "format": "email", "description": "Authorized email address" },
+        "phone": { "type": "string", "description": "Authorized phone number" },
+        "pin": { "type": "string", "description": "4-digit access PIN" },
+        "status": { "type": "string", "enum": ["active", "inactive"], "description": "Authorization status" },
+        "checkinsCount": { "type": "number", "description": "Total QR check-ins registered" },
+        "assignedGate": { "type": "string", "description": "Assigned venue gate" },
+        "avatar": { "type": "string", "description": "Collaborator avatar URL" },
+        "lastActive": { "type": "string", "description": "Last scan timestamp" }
       },
-      "required": ["id", "eventId", "folio", "photoHash", "timestamp", "status"]
+      "required": ["id", "name", "email", "status", "assignedGate"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": "UserProfile",
-      "description": "User profiles for authenticated attendees, staff, and producers"
+      "description": "User profiles for registered attendees, collaborators, and creators"
     },
     "/events/{eventId}": {
       "schema": "EventItem",
-      "description": "Event catalog and configuration"
+      "description": "Event catalog and multimedia configuration"
     },
-    "/events/{eventId}/tickets/{ticketId}": {
+    "/tickets/{ticketId}": {
       "schema": "Ticket",
-      "description": "Issued tickets for an event"
+      "description": "Issued tickets with individual QR codes and real-time scan status"
     },
-    "/events/{eventId}/wristbands/{wristbandId}": {
-      "schema": "WristbandVerification",
-      "description": "Wristband photo verification audits and anti-fraud scans"
+    "/collaborators/{collabId}": {
+      "schema": "Collaborator",
+      "description": "Authorized collaborators added by creators via email or phone"
     }
   }
 }

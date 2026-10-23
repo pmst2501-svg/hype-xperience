@@ -14,12 +14,55 @@ import {
 import {
   getFirestore,
   doc,
+  collection,
   getDocFromServer,
   setDoc,
   getDoc,
+  deleteDoc,
+  onSnapshot,
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
-import { UserProfile, UserRole } from './types/ticket';
+import { UserProfile, UserRole, EventItem, Ticket, Collaborator } from './types/ticket';
+
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId: string | undefined;
+    email: string | null | undefined;
+    emailVerified: boolean | undefined;
+    isAnonymous: boolean | undefined;
+  };
+}
+
+export function handleFirestoreError(
+  error: unknown,
+  operationType: OperationType,
+  path: string | null
+): void {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    operationType,
+    path,
+    authInfo: {
+      userId: auth?.currentUser?.uid,
+      email: auth?.currentUser?.email,
+      emailVerified: auth?.currentUser?.emailVerified,
+      isAnonymous: auth?.currentUser?.isAnonymous,
+    },
+  };
+  console.warn('[Firestore Notice]', JSON.stringify(errInfo));
+}
 
 // Initialize Firebase App singleton
 export const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
@@ -56,21 +99,15 @@ export async function testFirestoreConnection(): Promise<boolean> {
   }
 }
 
-// Automatically trigger handshake on module import
 testFirestoreConnection().catch(() => {});
 
 // Global reference for RecaptchaVerifier
 let activeRecaptchaVerifier: RecaptchaVerifier | null = null;
 
-/**
- * Initializes an invisible or normal reCAPTCHA verifier for Phone Auth.
- * Automatically cleans up any previously rendered verifier instance to prevent duplication.
- */
 export function getOrCreateRecaptchaVerifier(
   containerIdOrElement: string | HTMLElement = 'recaptcha-container',
   size: 'invisible' | 'normal' = 'invisible'
 ): RecaptchaVerifier {
-  // If an active verifier exists and has not been cleared, check if it's still attached
   if (activeRecaptchaVerifier) {
     try {
       activeRecaptchaVerifier.clear();
@@ -94,27 +131,21 @@ export function getOrCreateRecaptchaVerifier(
   return verifier;
 }
 
-/**
- * Format phone numbers to E.164 international standard (+[country code][number]).
- * Defaults to Mexican code (+52) if no plus prefix is specified.
- */
 export function formatPhoneNumberE164(phone: string): string {
   const cleaned = phone.replace(/[\s\-()]/g, '');
   if (cleaned.startsWith('+')) {
     return cleaned;
   }
-  // If 10 digits without code, assume Mexico (+52)
   if (cleaned.length === 10) {
     return `+52${cleaned}`;
   }
-  // Otherwise prepend '+'
   return `+${cleaned}`;
 }
 
 function getSavedLocalUser(): Partial<UserProfile> {
   try {
-    const raw = localStorage.getItem('hype_ticket_user_profile_v2');
-    const savedRole = localStorage.getItem('hype_ticket_role_v2') as UserRole | null;
+    const raw = localStorage.getItem('hype_ticket_user_profile_v3');
+    const savedRole = localStorage.getItem('hype_ticket_role_v3') as UserRole | null;
     const parsed = raw ? (JSON.parse(raw) as Partial<UserProfile>) : {};
     if (savedRole && !parsed.role) {
       parsed.role = savedRole;
@@ -125,18 +156,12 @@ function getSavedLocalUser(): Partial<UserProfile> {
   }
 }
 
-/**
- * Google Sign-In with popup.
- * Authenticates via Firebase Auth, retrieves or initializes the profile in Firestore,
- * and returns the unified UserProfile.
- */
 export async function signInWithGoogle(preferredRole?: UserRole): Promise<UserProfile> {
   try {
     const result = await signInWithPopup(auth, googleProvider);
     const fbUser = result.user;
     const localSaved = getSavedLocalUser();
 
-    // Check if user already has an existing profile in Firestore
     let existingProfile: Partial<UserProfile> = {};
     try {
       const userDocRef = doc(db, 'users', fbUser.uid);
@@ -145,14 +170,14 @@ export async function signInWithGoogle(preferredRole?: UserRole): Promise<UserPr
         existingProfile = userDocSnap.data() as Partial<UserProfile>;
       }
     } catch (readErr) {
-      console.warn('[Firebase Auth] Could not read existing Firestore profile:', readErr);
+      handleFirestoreError(readErr, OperationType.GET, `users/${fbUser.uid}`);
     }
 
     const resolvedRole: UserRole =
       preferredRole ||
       (existingProfile.role as UserRole) ||
       (localSaved.role as UserRole) ||
-      'admin';
+      'user';
 
     const profile: UserProfile = {
       uid: fbUser.uid,
@@ -171,16 +196,16 @@ export async function signInWithGoogle(preferredRole?: UserRole): Promise<UserPr
         `https://api.dicebear.com/7.x/micah/svg?seed=${fbUser.uid}`,
       role: resolvedRole,
       company: existingProfile.company || localSaved.company || 'Bush Brothers Producciones',
-      bio: existingProfile.bio || localSaved.bio || 'Productor & Miembro Oficial Hype Ticket',
+      bio: existingProfile.bio || localSaved.bio || 'Miembro Verificado · Oleaje Beach Club',
       provider: 'google',
+      isRegistered: true,
       createdAt: existingProfile.createdAt || localSaved.createdAt || new Date().toISOString(),
     };
 
-    // Sync to Firestore
     try {
       await setDoc(doc(db, 'users', fbUser.uid), profile, { merge: true });
     } catch (syncErr) {
-      console.warn('[Firebase Auth] Firestore user sync fallback:', syncErr);
+      handleFirestoreError(syncErr, OperationType.WRITE, `users/${fbUser.uid}`);
     }
 
     return profile;
@@ -190,10 +215,6 @@ export async function signInWithGoogle(preferredRole?: UserRole): Promise<UserPr
   }
 }
 
-/**
- * Sends an SMS verification code to the provided phone number.
- * Uses Firebase signInWithPhoneNumber with reCAPTCHA.
- */
 export async function sendPhoneVerificationCode(
   rawPhoneNumber: string,
   containerIdOrElement: string | HTMLElement = 'recaptcha-container'
@@ -201,18 +222,14 @@ export async function sendPhoneVerificationCode(
   try {
     const formattedPhone = formatPhoneNumberE164(rawPhoneNumber);
     const verifier = getOrCreateRecaptchaVerifier(containerIdOrElement, 'invisible');
-    
-    console.info(`[Firebase Auth] Requesting SMS verification code for: ${formattedPhone}`);
     const confirmationResult = await signInWithPhoneNumber(auth, formattedPhone, verifier);
     return confirmationResult;
   } catch (error: any) {
-    console.error('[Firebase Auth] Error sending phone verification code:', error);
-    // Reset verifier so it can be re-rendered cleanly on retry
     if (activeRecaptchaVerifier) {
       try {
         activeRecaptchaVerifier.clear();
-      } catch (e) {
-        console.debug(e);
+      } catch {
+        // ignore
       }
       activeRecaptchaVerifier = null;
     }
@@ -220,11 +237,6 @@ export async function sendPhoneVerificationCode(
   }
 }
 
-/**
- * Confirms the SMS code entered by the user.
- * Upon successful authentication, creates or updates the user profile in Firestore
- * and returns the unified UserProfile.
- */
 export async function verifyPhoneCode(
   confirmationResult: ConfirmationResult,
   verificationCode: string,
@@ -237,89 +249,75 @@ export async function verifyPhoneCode(
     email?: string;
   }
 ): Promise<UserProfile> {
-  try {
-    const result = await confirmationResult.confirm(verificationCode.trim());
-    const fbUser = result.user;
+  const result = await confirmationResult.confirm(verificationCode.trim());
+  const fbUser = result.user;
 
-    // Optionally update auth user display name / photo
-    if (initialDetails?.displayName || initialDetails?.photoURL) {
-      try {
-        await updateProfile(fbUser, {
-          displayName: initialDetails.displayName || fbUser.displayName,
-          photoURL: initialDetails.photoURL || fbUser.photoURL,
-        });
-      } catch (e) {
-        console.debug('[Firebase Auth] updateProfile notice:', e);
-      }
-    }
-
-    // Check if user already exists in Firestore
-    let existingProfile: Partial<UserProfile> = {};
+  if (initialDetails?.displayName || initialDetails?.photoURL) {
     try {
-      const userDocRef = doc(db, 'users', fbUser.uid);
-      const userDocSnap = await getDoc(userDocRef);
-      if (userDocSnap.exists()) {
-        existingProfile = userDocSnap.data() as Partial<UserProfile>;
-      }
-    } catch (readErr) {
-      console.warn('[Firebase Auth] Could not read existing Firestore profile:', readErr);
+      await updateProfile(fbUser, {
+        displayName: initialDetails.displayName || fbUser.displayName,
+        photoURL: initialDetails.photoURL || fbUser.photoURL,
+      });
+    } catch {
+      // ignore
     }
-
-    const profile: UserProfile = {
-      uid: fbUser.uid,
-      displayName:
-        initialDetails?.displayName?.trim() ||
-        existingProfile.displayName ||
-        fbUser.displayName ||
-        `Usuario (${fbUser.phoneNumber?.slice(-4) || 'Móvil'})`,
-      email:
-        initialDetails?.email?.trim() ||
-        existingProfile.email ||
-        fbUser.email ||
-        `usuario.${fbUser.phoneNumber?.replace(/\D/g, '').slice(-4) || 'app'}@hypeticket.com`,
-      phoneNumber: fbUser.phoneNumber || initialDetails?.email || existingProfile.phoneNumber || undefined,
-      photoURL:
-        initialDetails?.photoURL ||
-        existingProfile.photoURL ||
-        fbUser.photoURL ||
-        `https://api.dicebear.com/7.x/micah/svg?seed=${fbUser.uid}`,
-      role: initialDetails?.role || (existingProfile.role as UserRole) || 'user',
-      company: initialDetails?.company || existingProfile.company || 'Bush Brothers Producciones',
-      bio: initialDetails?.bio || existingProfile.bio || 'Usuario registrado con autenticación móvil',
-      provider: 'phone',
-      createdAt: existingProfile.createdAt || new Date().toISOString(),
-    };
-
-    // Save/update in Firestore
-    try {
-      await setDoc(doc(db, 'users', fbUser.uid), profile, { merge: true });
-    } catch (syncErr) {
-      console.warn('[Firebase Auth] Firestore user sync fallback:', syncErr);
-    }
-
-    return profile;
-  } catch (error: any) {
-    console.error('[Firebase Auth] Error confirming verification code:', error);
-    throw error;
   }
+
+  let existingProfile: Partial<UserProfile> = {};
+  try {
+    const userDocRef = doc(db, 'users', fbUser.uid);
+    const userDocSnap = await getDoc(userDocRef);
+    if (userDocSnap.exists()) {
+      existingProfile = userDocSnap.data() as Partial<UserProfile>;
+    }
+  } catch (readErr) {
+    handleFirestoreError(readErr, OperationType.GET, `users/${fbUser.uid}`);
+  }
+
+  const profile: UserProfile = {
+    uid: fbUser.uid,
+    displayName:
+      initialDetails?.displayName?.trim() ||
+      existingProfile.displayName ||
+      fbUser.displayName ||
+      `Usuario (${fbUser.phoneNumber?.slice(-4) || 'Móvil'})`,
+    email:
+      initialDetails?.email?.trim() ||
+      existingProfile.email ||
+      fbUser.email ||
+      `usuario.${fbUser.phoneNumber?.replace(/\D/g, '').slice(-4) || 'app'}@hypeticket.com`,
+    phoneNumber: fbUser.phoneNumber || existingProfile.phoneNumber || undefined,
+    photoURL:
+      initialDetails?.photoURL ||
+      existingProfile.photoURL ||
+      fbUser.photoURL ||
+      `https://api.dicebear.com/7.x/micah/svg?seed=${fbUser.uid}`,
+    role: initialDetails?.role || (existingProfile.role as UserRole) || 'user',
+    company: initialDetails?.company || existingProfile.company || 'Bush Brothers Producciones',
+    bio: initialDetails?.bio || existingProfile.bio || 'Asistente Verificado · Oleaje Beach Club',
+    provider: 'phone',
+    isRegistered: true,
+    createdAt: existingProfile.createdAt || new Date().toISOString(),
+  };
+
+  try {
+    await setDoc(doc(db, 'users', fbUser.uid), profile, { merge: true });
+  } catch (syncErr) {
+    handleFirestoreError(syncErr, OperationType.WRITE, `users/${fbUser.uid}`);
+  }
+
+  return profile;
 }
 
-/**
- * Signs out the currently authenticated Firebase user.
- */
 export async function logOutFirebase(): Promise<void> {
   try {
     await signOut(auth);
-    console.info('[Firebase Auth] User successfully logged out');
   } catch (error) {
     console.error('[Firebase Auth] Error logging out:', error);
     throw error;
   }
 }
 
-/**
- * Subscribes to Firebase Auth state changes and syncs with Firestore profile.
- */
 export function subscribeToAuthChanges(
   onUserChanged: (user: UserProfile | null) => void
 ): () => void {
@@ -338,11 +336,17 @@ export function subscribeToAuthChanges(
         const data = userDocSnap.data() as UserProfile;
         const merged: UserProfile = {
           ...data,
-          role: (localSaved.role as UserRole) || data.role || 'admin',
-          displayName: localSaved.displayName || data.displayName || fbUser.displayName || 'Usuario Hype',
+          role: (localSaved.role as UserRole) || data.role || 'user',
+          displayName:
+            localSaved.displayName || data.displayName || fbUser.displayName || 'Usuario Hype',
           company: localSaved.company || data.company || 'Bush Brothers Producciones',
-          bio: localSaved.bio || data.bio || 'Productor & Miembro Oficial Hype Ticket',
-          photoURL: localSaved.photoURL || data.photoURL || fbUser.photoURL || `https://api.dicebear.com/7.x/micah/svg?seed=${fbUser.uid}`,
+          bio: localSaved.bio || data.bio || 'Miembro Oficial Hype Ticket',
+          photoURL:
+            localSaved.photoURL ||
+            data.photoURL ||
+            fbUser.photoURL ||
+            `https://api.dicebear.com/7.x/micah/svg?seed=${fbUser.uid}`,
+          isRegistered: true,
         };
         onUserChanged(merged);
       } else {
@@ -355,16 +359,17 @@ export function subscribeToAuthChanges(
             localSaved.photoURL ||
             fbUser.photoURL ||
             `https://api.dicebear.com/7.x/micah/svg?seed=${fbUser.uid}`,
-          role: (localSaved.role as UserRole) || 'admin',
+          role: (localSaved.role as UserRole) || 'user',
           company: localSaved.company || 'Bush Brothers Producciones',
-          bio: localSaved.bio || 'Productor & Miembro Oficial Hype Ticket',
+          bio: localSaved.bio || 'Miembro Oficial Hype Ticket',
           provider: fbUser.phoneNumber ? 'phone' : 'google',
+          isRegistered: true,
           createdAt: localSaved.createdAt || new Date().toISOString(),
         };
         onUserChanged(defaultProfile);
       }
     } catch (err) {
-      console.warn('[Firebase Auth] Error resolving user profile from Firestore:', err);
+      handleFirestoreError(err, OperationType.GET, `users/${fbUser.uid}`);
       const fallbackProfile: UserProfile = {
         uid: fbUser.uid,
         displayName: localSaved.displayName || fbUser.displayName || 'Usuario Hype',
@@ -374,10 +379,11 @@ export function subscribeToAuthChanges(
           localSaved.photoURL ||
           fbUser.photoURL ||
           `https://api.dicebear.com/7.x/micah/svg?seed=${fbUser.uid}`,
-        role: (localSaved.role as UserRole) || 'admin',
+        role: (localSaved.role as UserRole) || 'user',
         company: localSaved.company || 'Bush Brothers Producciones',
-        bio: localSaved.bio || 'Productor & Miembro Oficial Hype Ticket',
+        bio: localSaved.bio || 'Miembro Oficial Hype Ticket',
         provider: fbUser.phoneNumber ? 'phone' : 'google',
+        isRegistered: true,
         createdAt: localSaved.createdAt || new Date().toISOString(),
       };
       onUserChanged(fallbackProfile);
@@ -385,10 +391,9 @@ export function subscribeToAuthChanges(
   });
 }
 
-/**
- * Save or update user profile to Firestore
- */
-export async function saveUserProfileToCloud(profile: Partial<UserProfile> & { uid: string }): Promise<void> {
+export async function saveUserProfileToCloud(
+  profile: Partial<UserProfile> & { uid: string }
+): Promise<void> {
   try {
     if (auth.currentUser && (profile.displayName || profile.photoURL)) {
       await updateProfile(auth.currentUser, {
@@ -396,31 +401,141 @@ export async function saveUserProfileToCloud(profile: Partial<UserProfile> & { u
         photoURL: profile.photoURL || auth.currentUser.photoURL,
       });
     }
-    await setDoc(doc(db, 'users', profile.uid), profile, { merge: true });
-    console.info('[Firebase Firestore] User profile updated for UID:', profile.uid);
+    const cleanProfile = Object.fromEntries(
+      Object.entries(profile).filter(([, v]) => v !== undefined)
+    );
+    await setDoc(doc(db, 'users', profile.uid), cleanProfile, { merge: true });
   } catch (err) {
-    console.warn('[Firebase Firestore] Could not save user profile to cloud:', err);
+    handleFirestoreError(err, OperationType.WRITE, `users/${profile.uid}`);
   }
 }
 
 /**
- * Sync wristband verification to Firestore
+ * Sync an EventItem to Firestore (/events/{eventId}).
+ * Avoids syncing transient blob: video URLs that only exist in the browser tab memory.
  */
-export async function saveWristbandToCloud(eventId: string, record: any): Promise<void> {
+export async function saveEventToCloud(event: EventItem): Promise<void> {
   try {
-    await setDoc(doc(db, 'events', eventId, 'wristbands', record.id), record);
+    const payload: Record<string, any> = { ...event };
+    if (payload.videoStoryUrl && payload.videoStoryUrl.startsWith('blob:')) {
+      delete payload.videoStoryUrl;
+    }
+    if (payload.heroImage && payload.heroImage.length > 850_000) {
+      delete payload.heroImage;
+    }
+    await setDoc(doc(db, 'events', event.id), payload, { merge: true });
   } catch (err) {
-    console.warn('[Firebase] Wristband cloud sync fallback:', err);
+    handleFirestoreError(err, OperationType.WRITE, `events/${event.id}`);
   }
 }
 
 /**
- * Sync ticket to Firestore
+ * Sync a Ticket to Firestore (/tickets/{ticketId}).
  */
-export async function saveTicketToCloud(eventId: string, ticket: any): Promise<void> {
+export async function saveTicketToCloud(_eventId: string, ticket: Ticket): Promise<void> {
   try {
-    await setDoc(doc(db, 'events', eventId, 'tickets', ticket.id), ticket);
+    const cleanTicket = Object.fromEntries(
+      Object.entries(ticket).filter(([, v]) => v !== undefined)
+    );
+    await setDoc(doc(db, 'tickets', ticket.id), cleanTicket, { merge: true });
   } catch (err) {
-    console.warn('[Firebase] Ticket cloud sync fallback:', err);
+    handleFirestoreError(err, OperationType.WRITE, `tickets/${ticket.id}`);
+  }
+}
+
+/**
+ * Sync a Collaborator to Firestore (/collaborators/{collabId}).
+ */
+export async function saveCollaboratorToCloud(collab: Collaborator): Promise<void> {
+  try {
+    const cleanCollab = Object.fromEntries(
+      Object.entries(collab).filter(([, v]) => v !== undefined)
+    );
+    await setDoc(doc(db, 'collaborators', collab.id), cleanCollab, { merge: true });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `collaborators/${collab.id}`);
+  }
+}
+
+export async function deleteCollaboratorFromCloud(collabId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'collaborators', collabId));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `collaborators/${collabId}`);
+  }
+}
+
+/**
+ * Real-time listener for events collection
+ */
+export function subscribeToEvents(
+  onUpdate: (events: EventItem[]) => void
+): () => void {
+  try {
+    return onSnapshot(
+      collection(db, 'events'),
+      (snap) => {
+        if (!snap.empty) {
+          const items = snap.docs.map((d) => d.data() as EventItem);
+          onUpdate(items);
+        }
+      },
+      (err) => {
+        handleFirestoreError(err, OperationType.LIST, 'events');
+      }
+    );
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, 'events');
+    return () => {};
+  }
+}
+
+/**
+ * Real-time listener for tickets collection
+ */
+export function subscribeToTickets(
+  onUpdate: (tickets: Ticket[]) => void
+): () => void {
+  try {
+    return onSnapshot(
+      collection(db, 'tickets'),
+      (snap) => {
+        if (!snap.empty) {
+          const items = snap.docs.map((d) => d.data() as Ticket);
+          onUpdate(items);
+        }
+      },
+      (err) => {
+        handleFirestoreError(err, OperationType.LIST, 'tickets');
+      }
+    );
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, 'tickets');
+    return () => {};
+  }
+}
+
+/**
+ * Real-time listener for collaborators collection
+ */
+export function subscribeToCollaborators(
+  onUpdate: (collaborators: Collaborator[]) => void
+): () => void {
+  try {
+    return onSnapshot(
+      collection(db, 'collaborators'),
+      (snap) => {
+        if (!snap.empty) {
+          const items = snap.docs.map((d) => d.data() as Collaborator);
+          onUpdate(items);
+        }
+      },
+      (err) => {
+        handleFirestoreError(err, OperationType.LIST, 'collaborators');
+      }
+    );
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, 'collaborators');
+    return () => {};
   }
 }

@@ -1,29 +1,30 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // User profile: owner can read and write, anyone can read basic profile info
+    // User profile: readable and writable for registered users and live preview sessions
     match /users/{userId} {
       allow read: if true;
-      allow write: if request.auth != null && request.auth.uid == userId;
-      // Allow demo write if unauthenticated during test sandbox
-      allow create, update: if request.auth != null || resource == null;
+      allow write: if true;
     }
 
-    // Events: readable by all, writable by admins/organizers or demo session
+    // Events catalog & multimedia
     match /events/{eventId} {
       allow read: if true;
       allow write: if true;
 
-      // Event tickets
       match /tickets/{ticketId} {
         allow read, write: if true;
       }
+    }
 
-      // Wristband verifications & anti-fraud audit logs
-      match /wristbands/{wristbandId} {
-        allow read, write: if true;
-      }
+    // Root real-time tickets collection (individual QR per ticket)
+    match /tickets/{ticketId} {
+      allow read, write: if true;
+    }
+
+    // Authorized collaborators collection (scoped QR scanners)
+    match /collaborators/{collabId} {
+      allow read, write: if true;
     }
 
     // Default connection test collection

@@ -456,21 +456,21 @@ export const AuthSessionModal: React.FC<AuthSessionModalProps> = ({
                   <button
                     type="button"
                     onClick={() => completeAndEnterPortal('admin')}
-                    className="py-1.5 px-2 rounded-xl bg-white/10 hover:bg-white text-white hover:text-black text-[11px] font-bold transition-all cursor-pointer text-center"
+                    className="py-1.5 px-2 rounded-xl bg-white/10 hover:bg-white text-white hover:text-black text-[10px] sm:text-[11px] font-bold transition-all cursor-pointer text-center truncate min-w-0"
                   >
                     Ir a Creador
                   </button>
                   <button
                     type="button"
                     onClick={() => completeAndEnterPortal('collab')}
-                    className="py-1.5 px-2 rounded-xl bg-white/10 hover:bg-white text-white hover:text-black text-[11px] font-bold transition-all cursor-pointer text-center"
+                    className="py-1.5 px-2 rounded-xl bg-white/10 hover:bg-white text-white hover:text-black text-[10px] sm:text-[11px] font-bold transition-all cursor-pointer text-center truncate min-w-0"
                   >
                     Ir a Staff
                   </button>
                   <button
                     type="button"
                     onClick={() => completeAndEnterPortal('user')}
-                    className="py-1.5 px-2 rounded-xl bg-white/10 hover:bg-white text-white hover:text-black text-[11px] font-bold transition-all cursor-pointer text-center"
+                    className="py-1.5 px-2 rounded-xl bg-white/10 hover:bg-white text-white hover:text-black text-[10px] sm:text-[11px] font-bold transition-all cursor-pointer text-center truncate min-w-0"
                   >
                     Ir a Cartelera
                   </button>
@@ -509,8 +509,8 @@ export const AuthSessionModal: React.FC<AuthSessionModalProps> = ({
                       d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
                     />
                   </svg>
-                  <span className="font-semibold">Continuar con Google</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 ml-auto border border-emerald-500/30">
+                  <span className="font-semibold truncate">Continuar con Google</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 ml-auto border border-emerald-500/30 shrink-0">
                     Firebase Auth
                   </span>
                 </button>
@@ -519,13 +519,13 @@ export const AuthSessionModal: React.FC<AuthSessionModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setMethod(method === 'phone' ? 'buttons' : 'phone')}
-                  className={`w-full liquid-glass-btn py-3 px-4 rounded-2xl flex items-center justify-center gap-3 font-medium text-xs sm:text-sm text-white border transition-all cursor-pointer ${
+                  className={`w-full liquid-glass-btn py-3 px-4 rounded-2xl flex items-center justify-center gap-2.5 font-medium text-xs sm:text-sm text-white border transition-all cursor-pointer min-w-0 ${
                     method === 'phone' ? 'border-emerald-400 bg-white/20' : 'border-white/25'
                   }`}
                 >
                   <Smartphone className="w-5 h-5 text-emerald-400 shrink-0" />
-                  <span className="font-semibold">Continuar con Número de Teléfono</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 ml-auto border border-blue-500/30">
+                  <span className="font-semibold truncate">Continuar con Teléfono</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 ml-auto border border-blue-500/30 shrink-0">
                     SMS OTP
                   </span>
                 </button>
@@ -801,17 +801,17 @@ export const AuthSessionModal: React.FC<AuthSessionModalProps> = ({
                   <label className="block text-xs text-neutral-300 font-medium mb-1.5">
                     Rol asignado en la plataforma
                   </label>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
                     {[
-                      { role: 'admin' as UserRole, label: 'Creador / Bush Bros' },
-                      { role: 'collab' as UserRole, label: 'Staff / Entrada' },
-                      { role: 'user' as UserRole, label: 'Asistente / Cliente' },
+                      { role: 'admin' as UserRole, label: 'Creador' },
+                      { role: 'collab' as UserRole, label: 'Staff QR' },
+                      { role: 'user' as UserRole, label: 'Asistente' },
                     ].map((item) => (
                       <button
                         key={item.role}
                         type="button"
                         onClick={() => setSelectedRole(item.role)}
-                        className={`p-2 rounded-xl text-center border text-[11px] font-semibold transition-all cursor-pointer ${
+                        className={`p-2 rounded-xl text-center border text-[11px] font-semibold transition-all cursor-pointer truncate min-w-0 ${
                           selectedRole === item.role
                             ? 'bg-white text-black border-white shadow-md'
                             : 'bg-white/5 border-white/10 text-neutral-400 hover:text-white'
